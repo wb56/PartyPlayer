@@ -107,7 +107,7 @@ def test_destructive_maintenance_is_twice_gated_backed_up_drained_and_resumed(
     assert gate_calls == 2
     assert lifecycle == ["quiesce", "resume"]
     assert result.safety_backup_path is not None
-    assert result.safety_backup_path.name.startswith("partyplayer-safety-backup-")
+    assert result.safety_backup_path.name.startswith("deckrelay-safety-backup-")
     assert validate_backup_archive(result.safety_backup_path).valid
 
 

@@ -1,6 +1,6 @@
 # Third-Party Licenses and Runtime Dependencies
 
-This document summarizes third-party components used by Party Player and their
+This document summarizes third-party components used by DeckRelay and their
 licensing context for source and release distribution.
 
 ## Core Python Runtime Dependencies
@@ -22,7 +22,7 @@ licensing context for source and release distribution.
 
 ## External Runtime Components (Not Bundled)
 
-The following components are required but are not shipped inside Party Player
+The following components are required but are not shipped inside DeckRelay
 release ZIP files:
 
 - VLC (LibVLC runtime)
@@ -39,11 +39,11 @@ release ZIP files:
 
 ## Distribution Policy
 
-- Party Player source code is licensed under GPL-3.0-or-later (see LICENSE).
+- DeckRelay source code is licensed under GPL-3.0-or-later (see LICENSE).
 - VLC executables, libVLC, VLC plugins, FFmpeg, and FFprobe are intentionally not
   included in release ZIPs.
 - End users must install VLC and, for analysis features, FFmpeg/FFprobe before use.
-- Party Player never downloads or installs these external runtimes automatically.
+- DeckRelay never downloads or installs these external runtimes automatically.
 - The release build filters hook-discovered runtime files and fails its post-build
   scan if a forbidden VLC/FFmpeg artifact remains.
 
@@ -53,4 +53,4 @@ release ZIP files:
 - Re-check upstream licenses for customtkinter, python-vlc, TinyTag, and Pillow.
 - Verify runtime prerequisite notes in README.md and LAUFZEIT-README.txt.
 - Confirm release artifacts do not include third-party binary bundles by accident.
-- Run `scripts/check_release_artifact.py dist/PartyPlayer` and require success.
+- Run `scripts/check_release_artifact.py dist/DeckRelay` and require success.

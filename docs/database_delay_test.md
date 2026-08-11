@@ -1,4 +1,4 @@
-# PartyPlayer – belastbarer Datenbankverzögerungstest
+# DeckRelay – belastbarer Datenbankverzögerungstest
 
 ## Zweck
 

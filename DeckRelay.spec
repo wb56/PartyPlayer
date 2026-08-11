@@ -19,7 +19,7 @@ a = Analysis(
     hiddenimports=["vlc"],
 )
 # The python-vlc PyInstaller hook may discover a locally installed VLC runtime.
-# PartyPlayer intentionally ships only the Python binding and requires an external
+# DeckRelay intentionally ships only the Python binding and requires an external
 # user-installed VLC/FFmpeg runtime.
 a.binaries = TOC(
     entry for entry in a.binaries if not is_forbidden_dependency_path(entry[0])
@@ -31,7 +31,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="PartyPlayer",
+    name="DeckRelay",
     console=False,
 )
 coll = COLLECT(
@@ -40,6 +40,6 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    name="PartyPlayer",
+    name="DeckRelay",
     contents_directory=".",
 )

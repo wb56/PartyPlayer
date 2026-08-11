@@ -1,6 +1,6 @@
 # Deterministische Queue-Reihenfolge
 
-PartyPlayer sortiert Queue-Einträge nach vier stabilen Schlüsseln:
+DeckRelay sortiert Queue-Einträge nach vier stabilen Schlüsseln:
 
 1. Priorität absteigend;
 2. manuelle Position aufsteigend;

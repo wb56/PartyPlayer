@@ -65,9 +65,7 @@ def prevent_production_database_access(monkeypatch: MonkeyPatch) -> Iterator[Non
         if not isinstance(database, int):
             candidate = Path(database).resolve()
             if candidate == production_database:
-                pytest.fail(
-                    "Ein Test hat versucht, die produktive PartyPlayer-Datenbank zu öffnen."
-                )
+                pytest.fail("Ein Test hat versucht, die produktive DeckRelay-Datenbank zu öffnen.")
         return cast(sqlite3.Connection, original_connect(database, *args, **kwargs))
 
     monkeypatch.setattr(sqlite3, "connect", guarded_connect)

@@ -1,4 +1,4 @@
-"""Run the bounded smoke test for dist/PartyPlayer."""
+"""Run the bounded smoke test for dist/DeckRelay."""
 
 import argparse
 from pathlib import Path
@@ -10,7 +10,7 @@ from party_player.release_smoke import run_release_smoke_test
 
 def main(arguments: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("release_directory", nargs="?", type=Path, default=Path("dist/PartyPlayer"))
+    parser.add_argument("release_directory", nargs="?", type=Path, default=Path("dist/DeckRelay"))
     parser.add_argument("--timeout", type=float, default=8.0)
     args = parser.parse_args(arguments)
     project = Path(__file__).resolve().parents[1]

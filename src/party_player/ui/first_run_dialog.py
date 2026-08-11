@@ -41,7 +41,7 @@ class FirstRunSetupDialog(ctk.CTkToplevel):  # type: ignore[misc]
         ) = None,
     ) -> None:
         super().__init__(parent)
-        self.title("PartyPlayer – Einrichtung")
+        self.title("DeckRelay – Einrichtung")
         self.geometry("760x680")
         self.minsize(680, 600)
         self.transient(parent)
@@ -68,7 +68,7 @@ class FirstRunSetupDialog(ctk.CTkToplevel):  # type: ignore[misc]
         self.grid_rowconfigure(2, weight=1)
         ctk.CTkLabel(
             self,
-            text="PartyPlayer – Einrichtung",
+            text="DeckRelay – Einrichtung",
             font=ctk.CTkFont(size=24, weight="bold"),
         ).grid(row=0, column=0, padx=24, pady=(24, 8), sticky="w")
         ctk.CTkLabel(
@@ -94,7 +94,7 @@ class FirstRunSetupDialog(ctk.CTkToplevel):  # type: ignore[misc]
         self._ffmpeg_status = self._status_row(status, 2, "FFmpeg")
         self._ffprobe_status = self._status_row(status, 3, "FFprobe")
         self._os_status = self._status_row(status, 4, "Betriebssystem")
-        self._app_status = self._status_row(status, 5, "PartyPlayer")
+        self._app_status = self._status_row(status, 5, "DeckRelay")
         self._database_status = self._status_row(status, 6, "SQLite")
         self._audio_status = self._status_row(status, 7, "Audiogeräte")
         self._message = ctk.CTkLabel(status, text="", justify="left", wraplength=610)
@@ -147,7 +147,7 @@ class FirstRunSetupDialog(ctk.CTkToplevel):  # type: ignore[misc]
             actions, text="Einrichtung abschließen", command=self._finish
         )
         self._continue_button.pack(side="right")
-        ctk.CTkButton(actions, text="PartyPlayer beenden", command=self._cancel).pack(
+        ctk.CTkButton(actions, text="DeckRelay beenden", command=self._cancel).pack(
             side="right", padx=8
         )
         self._render()

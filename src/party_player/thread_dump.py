@@ -9,6 +9,7 @@ from time import monotonic
 import traceback
 
 from party_player.diagnostic_retention import retain_latest
+from party_player.product import PRODUCT_NAME, PRODUCT_SLUG
 
 
 class ThreadDumpWriter:
@@ -51,16 +52,18 @@ class ThreadDumpWriter:
         self._last_dump_at = now
         self._directory.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().astimezone()
-        target = self._directory / f"thread-dump-{timestamp:%Y%m%d-%H%M%S}.txt"
+        target = self._directory / f"{PRODUCT_SLUG}-thread-dump-{timestamp:%Y%m%d-%H%M%S}.txt"
         sequence = 1
         while target.exists():
-            target = self._directory / f"thread-dump-{timestamp:%Y%m%d-%H%M%S}-{sequence}.txt"
+            target = self._directory / (
+                f"{PRODUCT_SLUG}-thread-dump-{timestamp:%Y%m%d-%H%M%S}-{sequence}.txt"
+            )
             sequence += 1
         # Capture the frame map once so all thread stacks describe approximately
         # the same instant and the dump stays internally consistent.
         frames = sys._current_frames()
         lines = [
-            "PartyPlayer critical GUI heartbeat thread dump",
+            f"{PRODUCT_NAME} critical GUI heartbeat thread dump",
             f"Timestamp: {timestamp.isoformat(timespec='seconds')}",
             f"Heartbeat delay: {delay_ms:.1f} ms",
             f"Test context: {test_context}",

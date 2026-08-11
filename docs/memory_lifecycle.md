@@ -1,4 +1,4 @@
-# PartyPlayer – Speicher- und Ressourcenlebenszyklus
+# DeckRelay – Speicher- und Ressourcenlebenszyklus
 
 ## Besitzer und Grenzen
 

@@ -2,7 +2,7 @@
 
 ## Eine CD oder gespeicherte Playlist laden
 
-Beim Laden in eine bereits belegte Queue fragt Party Player, wie mit den vorhandenen
+Beim Laden in eine bereits belegte Queue fragt DeckRelay, wie mit den vorhandenen
 Titeln verfahren werden soll:
 
 - **Ja – ersetzen:** Wartende und nur vorbereitete Titel der bisherigen Queue werden
@@ -32,7 +32,7 @@ Die Rückfrage **Vollständig abspielen?** bestimmt die Wiedergaberegel:
   was mit früheren Einträgen geschieht.
 
 Die Startzusammenfassung nennt Starttitel, wartende und voraussichtlich spielbare
-Titel sowie erkennbare Regelblockaden. Nach dem Start lädt Party Player den Folgetitel
+Titel sowie erkennbare Regelblockaden. Nach dem Start lädt DeckRelay den Folgetitel
 auf das freie Deck und wechselt abwechselnd zwischen Deck A und Deck B.
 
 ## Pause, Fortsetzen und manuelle Eingriffe
@@ -57,4 +57,3 @@ Bei aktivierter Sitzungswiederherstellung bleiben offene Queue-Einträge erhalte
 Vorbereitungs- und Deckzustände werden aus Sicherheitsgründen wieder auf wartend
 gesetzt; die Wiedergabe startet niemals allein durch den Programmstart. Beim Laden
 einer neuen CD anschließend bewusst **Ersetzen** oder **Anhängen** wählen.
-

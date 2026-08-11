@@ -8,7 +8,7 @@ LATEST_SCHEMA_VERSION = 34
 
 
 def migrate(database: Database) -> None:
-    """Create or upgrade the Party Player database schema."""
+    """Create or upgrade the DeckRelay database schema."""
     with database.connect() as connection:
         connection.executescript(
             """
@@ -336,7 +336,7 @@ def _migrate_to_v5(connection: sqlite3.Connection) -> None:
 
 
 def _migrate_to_v6(connection: sqlite3.Connection) -> None:
-    """Store PartyPlayer cue points separately from music-file metadata."""
+    """Store DeckRelay cue points separately from music-file metadata."""
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS track_cue_points (

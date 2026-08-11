@@ -1,4 +1,4 @@
-# Copilot Instructions — Party Player
+# Copilot Instructions — DeckRelay
 
 Diese Datei basiert auf den verbindlichen Vorgaben des MP3-Manager-Projekts.
 
@@ -14,4 +14,3 @@ Diese Datei basiert auf den verbindlichen Vorgaben des MP3-Manager-Projekts.
 - Code und Bezeichner Englisch, UI-Texte Deutsch; Type Hints und Docstrings sind Pflicht.
 - Tests verwenden temporäre SQLite-Datenbanken, gemockte Player und keine echte Musiksammlung.
 - Party-Oberflächen zeigen keine Tag-Editoren, Datenbankwartung oder Dateioperationen.
-

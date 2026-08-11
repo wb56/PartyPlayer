@@ -60,7 +60,7 @@ def test_live_wal_database_is_backed_up_consistently(
     assert result.success
     assert result.state is BackupOperationState.COMPLETED
     assert result.backup_path is not None
-    assert result.backup_path.name == "partyplayer-backup-2026-08-09-143045.partyplayer-backup"
+    assert result.backup_path.name == "deckrelay-backup-2026-08-09-143045.partyplayer-backup"
     validation = validate_backup_archive(result.backup_path)
     assert validation.valid
     with ZipFile(result.backup_path) as archive:
@@ -83,6 +83,8 @@ def test_backup_manifest_contains_size_checksum_and_schema(
         manifest = json.loads(archive.read(MANIFEST_ARCHIVE_PATH))
 
     assert manifest["format_version"] == 1
+    assert manifest["product_name"] == "DeckRelay"
+    assert manifest["product_slug"] == "deckrelay"
     assert manifest["database_schema_version"] == 34
     assert manifest["included_sections"] == ["database"]
     assert BACKUP_MANIFEST_JSON_SCHEMA["additionalProperties"] is False
@@ -117,7 +119,7 @@ def test_restore_preparation_marks_automatic_backup_as_safety(
     assert result.success
     assert result.purpose is BackupPurpose.SAFETY
     assert result.backup_path is not None
-    assert result.backup_path.name.startswith("partyplayer-safety-backup-")
+    assert result.backup_path.name.startswith("deckrelay-safety-backup-")
 
 
 def test_safety_retention_removes_only_old_exact_safety_names(
@@ -137,7 +139,7 @@ def test_safety_retention_removes_only_old_exact_safety_names(
 
     results = [service.create_backup(target, purpose=BackupPurpose.SAFETY) for _index in range(4)]
 
-    safety_archives = sorted(target.glob("partyplayer-safety-backup-*.partyplayer-backup"))
+    safety_archives = sorted(target.glob("deckrelay-safety-backup-*.partyplayer-backup"))
     assert len([path for path in safety_archives if path != similar]) == 2
     assert manual.read_bytes() == b"manual-must-stay"
     assert similar.read_bytes() == b"not-owned-by-retention"
@@ -277,7 +279,7 @@ def test_backup_preflight_rejects_unwritable_target_with_stable_code(
     original_open = Path.open
 
     def reject_probe(path: Path, *args: object, **kwargs: object):
-        if path.name.startswith(".partyplayer-write-probe-"):
+        if path.name.startswith(".deckrelay-write-probe-"):
             raise PermissionError(13, "denied")
         return original_open(path, *args, **kwargs)
 

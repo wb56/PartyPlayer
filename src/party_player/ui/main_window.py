@@ -1,4 +1,4 @@
-"""CustomTkinter Party Player main window."""
+"""CustomTkinter DeckRelay main window."""
 
 from collections.abc import Callable
 from dataclasses import replace
@@ -1031,7 +1031,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             max_create_rows=1,
             split_creation_and_bind=True,
         )
-        self.title(f"PartyPlayer {__version__}")
+        self.title(f"DeckRelay {__version__}")
         self.geometry("1500x950")
         self.minsize(1180, 800)
         ctk.set_appearance_mode("dark")
@@ -2194,7 +2194,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             title="Playlist exportieren",
             defaultextension=".json",
             filetypes=(
-                ("PartyPlayer-Playlist", "*.json"),
+                ("DeckRelay-Playlist", "*.json"),
                 ("M3U8-Playlist", "*.m3u8"),
             ),
         )
@@ -2216,7 +2216,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             title="Playlist importieren und prüfen",
             filetypes=(
                 ("Playlistdateien", "*.json *.m3u *.m3u8"),
-                ("PartyPlayer-Playlist", "*.json"),
+                ("DeckRelay-Playlist", "*.json"),
                 ("M3U/M3U8-Playlist", "*.m3u *.m3u8"),
             ),
         )
@@ -2258,7 +2258,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         destination = filedialog.asksaveasfilename(
             title="Equalizer-Preset exportieren",
             defaultextension=".json",
-            filetypes=(("PartyPlayer-Equalizer", "*.json"),),
+            filetypes=(("DeckRelay-Equalizer", "*.json"),),
         )
         return bool(destination) and controller.start_equalizer_export(
             preset_key, Path(destination)
@@ -2275,7 +2275,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             return False
         selected = filedialog.askopenfilename(
             title="Equalizer-Preset importieren und prüfen",
-            filetypes=(("PartyPlayer-Equalizer", "*.json"),),
+            filetypes=(("DeckRelay-Equalizer", "*.json"),),
         )
         return bool(selected) and controller.start_equalizer_import_preview(Path(selected))
 
@@ -2286,7 +2286,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         destination = filedialog.asksaveasfilename(
             title="Overlays und Jingles exportieren",
             defaultextension=".json",
-            filetypes=(("PartyPlayer-Overlays", "*.json"),),
+            filetypes=(("DeckRelay-Overlays", "*.json"),),
         )
         return bool(destination) and controller.start_overlay_export(Path(destination))
 
@@ -2296,7 +2296,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             return False
         selected = filedialog.askopenfilename(
             title="Overlays und Jingles importieren und prüfen",
-            filetypes=(("PartyPlayer-Overlays", "*.json"),),
+            filetypes=(("DeckRelay-Overlays", "*.json"),),
         )
         return bool(selected) and controller.start_overlay_import_preview(Path(selected))
 
@@ -2351,7 +2351,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
     def _request_backup(self) -> bool:
         if self._backup_restore_controller is None:
             return False
-        selected = filedialog.askdirectory(title="Zielordner für PartyPlayer-Backup wählen")
+        selected = filedialog.askdirectory(title="Zielordner für DeckRelay-Backup wählen")
         if selected:
             return self._backup_restore_controller.start_backup(Path(selected))
         return False
@@ -2365,8 +2365,8 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         if self._backup_restore_controller is None:
             return False
         selected = filedialog.askopenfilename(
-            title="PartyPlayer-Backup wiederherstellen",
-            filetypes=(("PartyPlayer-Backup", "*.partyplayer-backup"), ("Alle Dateien", "*.*")),
+            title="DeckRelay-Backup wiederherstellen",
+            filetypes=(("DeckRelay-Backup", "*.partyplayer-backup"), ("Alle Dateien", "*.*")),
         )
         if not selected:
             return False
@@ -2375,7 +2375,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             "Backup wirklich wiederherstellen?",
             "Beide Decks müssen gestoppt und alle Audioaktionen beendet sein. "
             "Unmittelbar vor dem Austausch wird automatisch ein Sicherheitsbackup erstellt.\n\n"
-            "Nach erfolgreichem Restore muss PartyPlayer neu gestartet werden.",
+            "Nach erfolgreichem Restore muss DeckRelay neu gestartet werden.",
         ):
             return False
         safety_directory = Path(selected).resolve().parent / "safety-backups"
@@ -2425,7 +2425,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             if ask_silent_yes_no(
                 self,
                 title,
-                result.message + safety + "\n\nPartyPlayer jetzt kontrolliert neu starten?",
+                result.message + safety + "\n\nDeckRelay jetzt kontrolliert neu starten?",
             ):
                 self._restart_requested = True
                 self._dispose_resources()
@@ -5986,11 +5986,11 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         )
         choice = ask_silent_yes_no_cancel(
             self,
-            "Party Player schließen?",
+            "DeckRelay schließen?",
             audio_note + "Soll die aktive Session abgeschlossen werden?\n\n"
             "Ja = Session abschließen\n"
             "Nein = Session für den nächsten Start offenlassen\n"
-            "Abbrechen = Party Player geöffnet lassen",
+            "Abbrechen = DeckRelay geöffnet lassen",
         )
         if choice is None:
             return

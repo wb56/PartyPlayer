@@ -8,6 +8,7 @@ from threading import Thread
 from party_player.audio.vlc_backend import VlcAudioBackend
 from party_player.audio.factory import VlcAudioBackendFactory
 from party_player import __version__
+from party_player.product import PRODUCT_NAME
 from party_player.analysis import (
     CueAnalysisService,
     CueBoundaryEstimator,
@@ -128,7 +129,7 @@ class PartyPlayerApplication:
         self._paths.ensure_runtime_directories()
         configure_logging(self._paths.log_file)
         logger = logging.getLogger(__name__)
-        logger.info("Party Player wird gestartet")
+        logger.info("%s wird gestartet", PRODUCT_NAME)
 
         database = Database(self._paths.database_file)
         migrate(database)
@@ -340,7 +341,7 @@ class PartyPlayerApplication:
             window.show_error(
                 "Audioausgabe nicht verfügbar",
                 "VLC oder das gewählte Audiogerät konnte nicht gestartet werden. "
-                "Bitte prüfe die Audioverbindung und starte Party Player erneut.",
+                f"Bitte prüfe die Audioverbindung und starte {PRODUCT_NAME} erneut.",
             )
             window.destroy()
             return
@@ -734,7 +735,7 @@ class PartyPlayerApplication:
 
         # Let Windows paint the complete shell before catalog/session recovery can
         # preload or automatically start audio.  This guarantees that the operator
-        # sees and can control PartyPlayer before the first audible playback.
+        # sees and can control DeckRelay before the first audible playback.
         def initialize() -> None:
             controller.initialize()
             if settings.emergency_preload_primary():
@@ -754,6 +755,6 @@ class PartyPlayerApplication:
             loudness_controller.close()
             emergency_persistence.close()
             emergency_history.close()
-            logger.info("Party Player wurde beendet")
+            logger.info("%s wurde beendet", PRODUCT_NAME)
         if window.restart_requested:
             restart_current_application()

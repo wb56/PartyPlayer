@@ -80,10 +80,10 @@ def run_release_smoke_test(
         return ReleaseSmokeResult(
             False, ReleaseSmokeCode.RELEASE_MISSING, "Releaseverzeichnis fehlt."
         )
-    executable = release_directory / "PartyPlayer.exe"
+    executable = release_directory / "DeckRelay.exe"
     if not executable.is_file():
         return ReleaseSmokeResult(
-            False, ReleaseSmokeCode.EXECUTABLE_MISSING, "PartyPlayer.exe fehlt."
+            False, ReleaseSmokeCode.EXECUTABLE_MISSING, "DeckRelay.exe fehlt."
         )
     if not artifact_checker(release_directory):
         return ReleaseSmokeResult(
@@ -112,7 +112,7 @@ def run_release_smoke_test(
                 result = ReleaseSmokeResult(
                     False,
                     ReleaseSmokeCode.PROCESS_EXITED_EARLY,
-                    f"PartyPlayer wurde vor Ablauf des Zeitlimits beendet ({exit_code}).",
+                    f"DeckRelay wurde vor Ablauf des Zeitlimits beendet ({exit_code}).",
                     process.pid,
                     exit_code,
                 )

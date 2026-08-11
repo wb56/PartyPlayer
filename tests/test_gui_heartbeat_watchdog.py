@@ -11,11 +11,11 @@ from party_player.thread_dump import ThreadDumpWriter
 def wait_for_files(directory: Path, expected: int, timeout: float = 1.0) -> list[Path]:
     deadline = monotonic() + timeout
     while monotonic() < deadline:
-        files = list(directory.glob("thread-dump-*.txt"))
+        files = list(directory.glob("deckrelay-thread-dump-*.txt"))
         if len(files) >= expected:
             return files
         sleep(0.01)
-    return list(directory.glob("thread-dump-*.txt"))
+    return list(directory.glob("deckrelay-thread-dump-*.txt"))
 
 
 def test_watchdog_captures_blocking_main_thread_function(tmp_path: Path) -> None:

@@ -1,4 +1,4 @@
-"""Safe Party Player settings persistence."""
+"""Safe DeckRelay settings persistence."""
 
 import logging
 import math

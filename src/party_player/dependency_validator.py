@@ -114,7 +114,7 @@ class DependencyValidator:
                 base,
                 status=DependencyStatus.INCOMPATIBLE,
                 message=(
-                    f"VLC ist {architecture}-Bit, PartyPlayer benötigt "
+                    f"VLC ist {architecture}-Bit, DeckRelay benötigt "
                     f"{self._process_bitness}-Bit"
                 ),
                 error_code=DependencyErrorCode.VLC_ARCHITECTURE_MISMATCH.value,
@@ -297,7 +297,7 @@ class DependencyValidator:
         )
         probe_output: Path | None = None
         if getattr(sys, "frozen", False):
-            # In a PyInstaller build sys.executable is PartyPlayer.exe. Passing
+            # In a PyInstaller build sys.executable is DeckRelay.exe. Passing
             # Python's ``-c`` option would start a second GUI instance, which
             # remains alive until the dependency probe times out. The frozen
             # entry point handles this private command before importing the UI.

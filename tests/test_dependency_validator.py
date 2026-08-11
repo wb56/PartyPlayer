@@ -153,17 +153,17 @@ def test_frozen_vlc_probe_uses_private_entrypoint_instead_of_python_c(
 ) -> None:
     directory = tmp_path / "VLC install"
     runner = FakeRunner(
-        {"PartyPlayer.exe": process_result("PartyPlayer.exe", '{"version": "3.0.21 Vetinari"}')}
+        {"DeckRelay.exe": process_result("DeckRelay.exe", '{"version": "3.0.21 Vetinari"}')}
     )
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(sys, "executable", r"C:\Portable\PartyPlayer.exe")
+    monkeypatch.setattr(sys, "executable", r"C:\Portable\DeckRelay.exe")
 
     result = DependencyValidator(process_runner=runner)._probe_vlc_isolated(directory)
 
     assert result == VlcProbeResult(True, "3.0.21 Vetinari")
     assert len(runner.commands) == 1
     assert runner.commands[0][:3] == (
-        r"C:\Portable\PartyPlayer.exe",
+        r"C:\Portable\DeckRelay.exe",
         "--internal-vlc-probe",
         str(directory),
     )

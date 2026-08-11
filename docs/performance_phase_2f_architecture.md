@@ -1,4 +1,4 @@
-# PartyPlayer – Performance-Stabilisierung Phase 2F
+# DeckRelay – Performance-Stabilisierung Phase 2F
 
 ## Ziel
 

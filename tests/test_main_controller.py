@@ -1725,7 +1725,8 @@ def test_diagnostic_report_is_saved_with_context_and_without_file_paths(tmp_path
     report_path = controller.save_diagnostic_report("normal_playback", tmp_path / "diagnostics")
     report = report_path.read_text(encoding="utf-8")
 
-    assert report_path.name.startswith("partyplayer-diagnostic-")
+    assert report_path.name.startswith("deckrelay-diagnostic-")
+    assert report.startswith("DeckRelay diagnostic report")
     assert "Version: 1.0.0-beta.1" in report
     assert "Test context: normal_playback" in report
     assert "Operating mode:" in report

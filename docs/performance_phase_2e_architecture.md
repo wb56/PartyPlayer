@@ -1,4 +1,4 @@
-# PartyPlayer – Performance-Stabilisierung Phase 2E
+# DeckRelay – Performance-Stabilisierung Phase 2E
 
 ## Ziel und Grenze
 

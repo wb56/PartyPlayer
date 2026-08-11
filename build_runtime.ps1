@@ -24,9 +24,9 @@ $InitContent = $InitContent.Replace("`r`r`n", "`r`n")
 $env:TCL_LIBRARY = $BuildTcl
 $env:TK_LIBRARY = $InstalledTk
 
-& $Python -m PyInstaller --noconfirm --clean (Join-Path $PSScriptRoot "PartyPlayer.spec")
+& $Python -m PyInstaller --noconfirm --clean (Join-Path $PSScriptRoot "DeckRelay.spec")
 
-$Runtime = Join-Path $PSScriptRoot "dist\PartyPlayer"
+$Runtime = Join-Path $PSScriptRoot "dist\DeckRelay"
 New-Item -ItemType Directory -Force (Join-Path $Runtime "data") | Out-Null
 New-Item -ItemType Directory -Force (Join-Path $Runtime "logs") | Out-Null
 Copy-Item (Join-Path $PSScriptRoot "LAUFZEIT-README.txt") $Runtime -Force

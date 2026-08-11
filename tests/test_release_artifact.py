@@ -26,14 +26,14 @@ def test_forbidden_dependency_paths_are_detected(path: str) -> None:
 
 @pytest.mark.parametrize(
     "path",
-    ["vlc.py", "plugins/theme.json", "libavcodec.dll", "PartyPlayer.exe"],
+    ["vlc.py", "plugins/theme.json", "libavcodec.dll", "DeckRelay.exe"],
 )
 def test_binding_and_unrelated_runtime_files_remain_allowed(path: str) -> None:
     assert not is_forbidden_dependency_path(path)
 
 
 def test_release_scan_is_recursive_stable_and_bounded(tmp_path: Path) -> None:
-    allowed = tmp_path / "PartyPlayer.exe"
+    allowed = tmp_path / "DeckRelay.exe"
     forbidden = tmp_path / "_internal" / "plugins" / "audio" / "liba_plugin.dll"
     allowed.write_bytes(b"app")
     forbidden.parent.mkdir(parents=True)
@@ -58,7 +58,7 @@ def test_release_scan_requires_existing_directory(tmp_path: Path) -> None:
 
 def test_spec_and_build_script_enforce_release_policy() -> None:
     project = Path(__file__).resolve().parents[1]
-    spec = (project / "PartyPlayer.spec").read_text(encoding="utf-8")
+    spec = (project / "DeckRelay.spec").read_text(encoding="utf-8")
     build_script = (project / "build_runtime.ps1").read_text(encoding="utf-8")
 
     assert "is_forbidden_dependency_path" in spec

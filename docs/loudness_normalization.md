@@ -1,16 +1,16 @@
 # Lautheitsnormalisierung
 
-PartyPlayer berechnet die Wiedergabelautstärke zur Laufzeit. Musikdateien,
+DeckRelay berechnet die Wiedergabelautstärke zur Laufzeit. Musikdateien,
 ReplayGain-Tags und andere Metadaten in den Quelldateien werden weder geändert noch
 zurückgeschrieben. Eigene Analyse- und Korrekturwerte liegen ausschließlich in der
-PartyPlayer-Datenbank.
+DeckRelay-Datenbank.
 
 ## Auswahl des Gain-Werts
 
 Die Auflösung erfolgt pro Titel in dieser Reihenfolge:
 
 1. Ist die Normalisierung deaktiviert, wird `0 dB` verwendet.
-2. Eine manuelle PartyPlayer-Korrektur hat immer Vorrang.
+2. Eine manuelle DeckRelay-Korrektur hat immer Vorrang.
 3. Im Modus `ALBUM` wird ein gültiger Album-Gain verwendet.
 4. Fehlt im Album-Modus ein gültiger Album-Gain, folgt Track-Gain.
 5. Im Modus `TRACK` wird ausschließlich Track-Gain berücksichtigt.
@@ -28,7 +28,7 @@ Der angeforderte Gain wird nacheinander durch folgende Grenzen eingeschränkt:
 - tatsächlich vom Audio-Backend unterstützter Verstärkungsbereich;
 - Peak-Schutz.
 
-Für einen gültigen ReplayGain-Peak berechnet PartyPlayer die höchstens sichere
+Für einen gültigen ReplayGain-Peak berechnet DeckRelay die höchstens sichere
 Verstärkung aus:
 
 ```text
@@ -70,12 +70,12 @@ brechen eine alte Rampe kontrolliert ab.
 
 ## Datenhaltung
 
-PartyPlayer speichert eigene Werte in SQLite, insbesondere:
+DeckRelay speichert eigene Werte in SQLite, insbesondere:
 
 - manuelle Gain-Korrektur;
 - gelesene ReplayGain-Werte und Peaks;
 - Analyse- und Metadatenstatus;
 - Analyseversion und Zeitpunkte, soweit verfügbar.
 
-Die Audioquelldatei wird nur gelesen. PartyPlayer schreibt keine MP3-, FLAC-,
+Die Audioquelldatei wird nur gelesen. DeckRelay schreibt keine MP3-, FLAC-,
 ReplayGain- oder sonstigen Dateimetadaten.

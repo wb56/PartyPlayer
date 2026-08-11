@@ -1,6 +1,12 @@
-# Party Player
+# DeckRelay
 
-Eigenständige Windows-Anwendung für Musiksuche, Party-Warteschlange, Musikwünsche und Wiedergabe. Das Projekt verwendet eine eigene SQLite-Datenbank und verändert keine Musikdateien oder MP3-Tags.
+DeckRelay ist eine Windows-Desktopanwendung für große lokale MP3-/FLAC-Sammlungen,
+Veranstaltungsqueues, Zwei-Deck-Wiedergabe, automatische Übergänge, Cue-Punkte,
+Lautheitsanpassung sowie Jingles und Effekte.
+
+DeckRelay is a Windows desktop application for local music libraries, event queues,
+dual-deck playback, automatic transitions, cue points, loudness management,
+equalizer presets, and audio overlays.
 
 ## Entwicklung starten
 
@@ -14,7 +20,7 @@ Die Datenbank wird beim ersten Start unter `data/party_player.db` angelegt.
 
 ## Projektstatus
 
-PartyPlayer befindet sich mit `v1.0.0-beta.1` in der öffentlichen Beta-Abnahme.
+DeckRelay befindet sich mit `v1.0.0-beta.1` in der öffentlichen Beta-Abnahme.
 Reale Audio-, Geräte-, NAS-, Skalierungs- und Langzeittests sind weiterhin erforderlich.
 
 - Quellcode und kostenlose Windows-Beta-Releases sind öffentlich verfügbar.
@@ -35,7 +41,7 @@ Hinweise zu Drittanbieter-Lizenzen und Laufzeitabhaengigkeiten stehen in
 
 - Windows 10 oder Windows 11, 64 Bit.
 - VLC/libVLC ist fuer jede Wiedergabe erforderlich und muss separat installiert
-  werden. PartyPlayer prueft zuerst einen bewusst gewaehlten Installationsordner,
+  werden. DeckRelay prueft zuerst einen bewusst gewaehlten Installationsordner,
   danach gaengige Windows-Standardinstallationen und anschliessend `PATH`.
 - FFmpeg und FFprobe sind nur fuer neue automatische Cue- und Lautheitsanalysen
   erforderlich. Wiedergabe sowie vorhandene gespeicherte Analysewerte funktionieren
@@ -45,7 +51,7 @@ Hinweise zu Drittanbieter-Lizenzen und Laufzeitabhaengigkeiten stehen in
   unter `Einstellungen -> System / Externe Programme` ausgewaehlt und validiert
   werden. Aenderungen gelten nach einem Neustart.
 - VLC, libVLC, VLC-Plugins, FFmpeg und FFprobe werden weder mitgeliefert noch von
-  PartyPlayer heruntergeladen oder installiert. Downloadseiten werden nur nach einer
+  DeckRelay heruntergeladen oder installiert. Downloadseiten werden nur nach einer
   ausdruecklichen Benutzeraktion im Standardbrowser geoeffnet.
 
 ## Architektur

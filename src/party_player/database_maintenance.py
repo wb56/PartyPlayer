@@ -327,5 +327,5 @@ class DatabaseMaintenanceService:
             BackupOperationState.FAILED,
             operation,
             DatabaseMaintenanceErrorCode.DATABASE_MISSING,
-            "Die PartyPlayer-Datenbank fehlt.",
+            "Die DeckRelay-Datenbank fehlt.",
         )

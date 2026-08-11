@@ -1,4 +1,4 @@
-# PartyPlayer – Messergebnisse und Priorisierung für Phase 2
+# DeckRelay – Messergebnisse und Priorisierung für Phase 2
 
 Zugehörige Testprotokolle:
 

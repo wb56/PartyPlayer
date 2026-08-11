@@ -1,8 +1,8 @@
-# Party Player – Feature-Liste
+# DeckRelay – Feature-Liste
 
 Stand: 6. August 2026
 
-Party Player ist eine eigenständige Windows-Anwendung für Musiksuche,
+DeckRelay ist eine eigenständige Windows-Anwendung für Musiksuche,
 Veranstaltungsqueues, Zwei-Deck-Wiedergabe, automatische Übergänge sowie Jingles,
 Ansagen und Effekte. Musikdateien und ihre Tags werden nicht verändert; eigene
 Anwendungsdaten liegen in einer SQLite-Datenbank.

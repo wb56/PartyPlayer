@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "party-player"
 version = "1.0.0-beta.1"
-description = "Eigenständiger Partyplayer für Windows"
+description = "DeckRelay – Automatic Two-Deck Music Player"
 readme = "README.md"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.11"

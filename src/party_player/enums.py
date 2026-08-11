@@ -1,4 +1,4 @@
-"""Enumerations used by the Party Player domain."""
+"""Enumerations used by the DeckRelay domain."""
 
 from __future__ import annotations
 

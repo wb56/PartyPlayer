@@ -1,4 +1,4 @@
-# PartyPlayer – Protokoll für den Speicher-Langzeittest
+# DeckRelay – Protokoll für den Speicher-Langzeittest
 
 ## Testdaten
 

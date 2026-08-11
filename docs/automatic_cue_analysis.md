@@ -1,6 +1,6 @@
 # Automatische Cue-Analyse
 
-PartyPlayer kann Anfang und Ende eines Titels offline anhand des Audiosignals
+DeckRelay kann Anfang und Ende eines Titels offline anhand des Audiosignals
 vorschlagen. Die Analyse verändert keine Musikdatei und läuft getrennt von der
 Wiedergabe in einem Hintergrundworker.
 
@@ -8,7 +8,7 @@ Wiedergabe in einem Hintergrundworker.
 
 Standardmäßig werden nur die ersten und letzten 45 Sekunden untersucht. FFprobe
 ermittelt die technischen Dateidaten; FFmpeg dekodiert die gewählten Abschnitte in
-kleinen PCM-Blöcken. PartyPlayer berechnet daraus Pegelfenster, RMS, dBFS und Peak.
+kleinen PCM-Blöcken. DeckRelay berechnet daraus Pegelfenster, RMS, dBFS und Peak.
 
 Eine Hysterese verwendet getrennte Schwellen für Signalbeginn und Signalende.
 Mindestdauern unterdrücken kurze Pegelspitzen und verhindern, dass ein kurzer leiser

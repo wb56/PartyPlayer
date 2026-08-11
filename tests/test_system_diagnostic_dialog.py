@@ -17,7 +17,7 @@ def test_formatted_report_contains_dependencies_database_and_audio(tmp_path: Pat
 
     text = format_system_report(report)
 
-    assert "PartyPlayer: 1.0.0" in text
+    assert "DeckRelay: 1.0.0" in text
     assert "VLC / libVLC: available" in text
     assert "FFmpeg: not_found" in text
     assert "SQLite: available" in text

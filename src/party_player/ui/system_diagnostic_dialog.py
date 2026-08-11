@@ -24,7 +24,7 @@ def format_system_report(report: SystemDiagnosticReport) -> str:
     return (
         f"Geprüft: {report.checked_at}\n"
         f"Betriebssystem: {report.operating_system} ({report.architecture})\n"
-        f"PartyPlayer: {report.application_version}\n\n"
+        f"DeckRelay: {report.application_version}\n\n"
         f"VLC / libVLC: {dependency.vlc.status.value}\n"
         f"  Version: {dependency.vlc.version or 'unbekannt'}\n"
         f"  Quelle: {dependency.vlc.source or 'unbekannt'}\n"
@@ -57,7 +57,7 @@ class SystemDiagnosticDialog(ctk.CTkToplevel):  # type: ignore[misc]
         export: Callable[[SystemDiagnosticReport, DiagnosticExportMode], object],
     ) -> None:
         super().__init__(parent)
-        self.title("PartyPlayer – Systemdiagnose")
+        self.title("DeckRelay – Systemdiagnose")
         self.geometry("820x700")
         self.minsize(680, 540)
         self.transient(parent)

@@ -55,7 +55,7 @@ def test_atomic_pipeline_binds_safety_backup_directly_to_commit(
     assert result.success
     assert result.commit is not None and result.commit.restart_required
     assert result.safety_backup_path is not None
-    assert result.safety_backup_path.name.startswith("partyplayer-safety-backup-")
+    assert result.safety_backup_path.name.startswith("deckrelay-safety-backup-")
     with ZipFile(result.safety_backup_path) as archive:
         safety_db = tmp_path / "safety.db"
         safety_db.write_bytes(archive.read(DATABASE_ARCHIVE_PATH))

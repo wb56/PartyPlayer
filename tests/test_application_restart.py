@@ -13,7 +13,7 @@ def test_source_restart_uses_module_entry_point(tmp_path: Path) -> None:
 
 
 def test_frozen_restart_reexecutes_only_current_executable(tmp_path: Path) -> None:
-    executable = tmp_path / "PartyPlayer.exe"
+    executable = tmp_path / "DeckRelay.exe"
 
     command = build_restart_command(executable, frozen=True)
 

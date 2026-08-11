@@ -1,4 +1,4 @@
-"""Consistent, atomic PartyPlayer data backups without touching media files."""
+"""Consistent, atomic DeckRelay data backups without touching media files."""
 
 from collections.abc import Callable
 from contextlib import closing
@@ -20,6 +20,7 @@ from party_player import __version__
 from party_player.database.connection import Database
 from party_player.database.migrations import LATEST_SCHEMA_VERSION, migrate
 from party_player.performance_monitor import PerformanceMonitor
+from party_player.product import PRODUCT_NAME, PRODUCT_SLUG
 
 
 BACKUP_FORMAT_VERSION = 1
@@ -41,6 +42,8 @@ BACKUP_MANIFEST_JSON_SCHEMA: dict[str, object] = {
     "required": [
         "format_version",
         "application_version",
+        "product_name",
+        "product_slug",
         "created_at",
         "database_schema_version",
         "platform",
@@ -53,6 +56,8 @@ BACKUP_MANIFEST_JSON_SCHEMA: dict[str, object] = {
             "type": "string",
             "pattern": r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$",
         },
+        "product_name": {"const": PRODUCT_NAME},
+        "product_slug": {"const": PRODUCT_SLUG},
         "created_at": {"type": "string", "format": "date-time"},
         "database_schema_version": {"type": "integer", "minimum": 0},
         "platform": {"type": "string", "minLength": 1},
@@ -144,6 +149,8 @@ class BackupManifest:
     platform: str
     included_sections: tuple[str, ...]
     files: tuple[BackupManifestFile, ...]
+    product_name: str | None = None
+    product_slug: str | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -243,8 +250,11 @@ def _manifest_from_data(value: object) -> BackupManifest:
         "included_sections",
         "files",
     }
-    if set(value) != required:
+    product_fields = {"product_name", "product_slug"}
+    if set(value) not in (required, required | product_fields):
         raise ValueError("Manifestfelder sind unvollständig oder unbekannt")
+    if product_fields & set(value) and product_fields - set(value):
+        raise ValueError("Produktfelder im Manifest sind unvollständig")
     files_value = value["files"]
     sections_value = value["included_sections"]
     if not isinstance(files_value, list) or not isinstance(sections_value, list):
@@ -291,6 +301,12 @@ def _manifest_from_data(value: object) -> BackupManifest:
     if created_at.tzinfo is None or created_at.utcoffset() != timezone.utc.utcoffset(created_at):
         raise ValueError("Erstellzeit benötigt eine explizite UTC-Zeitzone")
     _version_tuple(str(value["application_version"]))
+    product_name = value.get("product_name")
+    product_slug = value.get("product_slug")
+    if product_name is not None and (
+        not isinstance(product_name, str) or not isinstance(product_slug, str)
+    ):
+        raise ValueError("Produktfelder im Manifest sind ungültig")
     return BackupManifest(
         format_version,
         str(value["application_version"]),
@@ -299,6 +315,8 @@ def _manifest_from_data(value: object) -> BackupManifest:
         str(value["platform"]),
         tuple(sections_value),
         tuple(files),
+        product_name,
+        product_slug,
     )
 
 
@@ -347,7 +365,7 @@ def validate_backup_archive(
                 return BackupValidationResult(
                     False,
                     BackupErrorCode.FORMAT_VERSION_TOO_NEW,
-                    "Das Backupformat ist neuer als diese PartyPlayer-Version.",
+                    f"Das Backupformat ist neuer als diese {PRODUCT_NAME}-Version.",
                     manifest,
                 )
             if manifest.format_version < BACKUP_FORMAT_VERSION:
@@ -363,7 +381,7 @@ def validate_backup_archive(
                 return BackupValidationResult(
                     False,
                     BackupErrorCode.APPLICATION_VERSION_TOO_NEW,
-                    "Das Backup stammt aus einer neueren PartyPlayer-Version.",
+                    f"Das Backup stammt aus einer neueren {PRODUCT_NAME}-Version.",
                     manifest,
                 )
             if manifest.database_schema_version > current_schema_version:
@@ -493,6 +511,8 @@ class BackupService:
                             DATABASE_ARCHIVE_PATH, snapshot.stat().st_size, _file_digest(snapshot)
                         ),
                     ),
+                    PRODUCT_NAME,
+                    PRODUCT_SLUG,
                 )
                 with self._performance.measure(
                     "backup.archive.create", warning_threshold_ms=1000.0
@@ -539,7 +559,7 @@ class BackupService:
         self, target_directory: Path, current_backup: Path
     ) -> tuple[tuple[Path, ...], str]:
         pattern = re.compile(
-            r"partyplayer-safety-backup-\d{4}-\d{2}-\d{2}-\d{6}(?:-\d+)?"
+            rf"(?:partyplayer|{PRODUCT_SLUG})-safety-backup-\d{{4}}-\d{{2}}-\d{{2}}-\d{{6}}(?:-\d+)?"
             + re.escape(BACKUP_EXTENSION)
         )
         try:
@@ -571,10 +591,10 @@ class BackupService:
     def _preflight_target(
         self, target_directory: Path, purpose: BackupPurpose
     ) -> BackupResult | None:
-        probe = target_directory / f".partyplayer-write-probe-{os.getpid()}.tmp"
+        probe = target_directory / f".{PRODUCT_SLUG}-write-probe-{os.getpid()}.tmp"
         try:
             with probe.open("xb") as stream:
-                stream.write(b"PartyPlayer backup target probe\n")
+                stream.write(f"{PRODUCT_NAME} backup target probe\n".encode())
             probe.unlink()
         except OSError:
             try:
@@ -612,7 +632,7 @@ class BackupService:
     @staticmethod
     def _available_destination(target: Path, created_at: datetime, purpose: BackupPurpose) -> Path:
         kind = "backup" if purpose is BackupPurpose.MANUAL else "safety-backup"
-        stem = f"partyplayer-{kind}-{created_at:%Y-%m-%d-%H%M%S}"
+        stem = f"{PRODUCT_SLUG}-{kind}-{created_at:%Y-%m-%d-%H%M%S}"
         candidate = target / f"{stem}{BACKUP_EXTENSION}"
         suffix = 1
         while candidate.exists():

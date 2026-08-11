@@ -1,11 +1,11 @@
-# PartyPlayer – Protokoll für manuellen Performance-Lasttest
+# DeckRelay – Protokoll für manuellen Performance-Lasttest
 
 ## Testdaten
 
 | Feld | Eintrag |
 |---|---|
 | Datum | |
-| PartyPlayer-Version | |
+| DeckRelay-Version | |
 | Computer | |
 | Betriebssystem | |
 | Audioausgabe | |

@@ -11,6 +11,8 @@ def test_critical_delay_writes_main_thread_stack(tmp_path: Path) -> None:
 
     assert target is not None
     report = target.read_text(encoding="utf-8")
+    assert target.name.startswith("deckrelay-thread-dump-")
+    assert report.startswith("DeckRelay critical GUI heartbeat thread dump")
     assert "Heartbeat delay: 1250.0 ms" in report
     assert "Test context: queue_stress" in report
     assert "Thread MainThread" in report

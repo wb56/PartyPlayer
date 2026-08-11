@@ -1,4 +1,4 @@
-"""Main Party Player controller."""
+"""Main DeckRelay controller."""
 
 import logging
 import gc
@@ -20,6 +20,7 @@ from party_player.persistence_participant import single_worker_participant
 from party_player.restore_lifecycle import PersistenceParticipant
 from party_player.restore_safety import RestoreSafetySnapshot
 from party_player import __version__
+from party_player.product import PRODUCT_NAME, PRODUCT_SLUG
 from party_player.gui_event_dispatcher import GuiEvent, GuiEventDispatcher, GuiEventType
 from party_player.performance_monitor import GuiHeartbeat, PerformanceMonitor, PerformanceSettings
 from party_player.gui_heartbeat_watchdog import GuiCallbackState, GuiHeartbeatWatchdog
@@ -5206,7 +5207,7 @@ class MainController:
         memory_growth = self._memory_monitor.growth()
         memory_stress_cycles = self._memory_monitor.stress_cycles()
         lines = [
-            "PartyPlayer diagnostic report",
+            f"{PRODUCT_NAME} diagnostic report",
             f"Version: {__version__}",
             f"Timestamp: {now.isoformat(timespec='seconds')}",
             f"Test context: {test_context}",
@@ -5439,11 +5440,11 @@ class MainController:
         directory = directory or self._diagnostics_directory
         directory.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        target = directory / f"partyplayer-diagnostic-{timestamp}.txt"
+        target = directory / f"{PRODUCT_SLUG}-diagnostic-{timestamp}.txt"
         sequence = 1
         while target.exists():
-            target = directory / f"partyplayer-diagnostic-{timestamp}-{sequence}.txt"
+            target = directory / f"{PRODUCT_SLUG}-diagnostic-{timestamp}-{sequence}.txt"
             sequence += 1
         target.write_text(self.diagnostic_report(test_context), encoding="utf-8")
-        retain_latest(directory, "partyplayer-diagnostic-*.txt", 500)
+        retain_latest(directory, f"{PRODUCT_SLUG}-diagnostic-*.txt", 500)
         return target

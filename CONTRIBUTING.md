@@ -1,10 +1,10 @@
 # Contributing
 
-Danke fur dein Interesse am Party Player.
+Danke fur dein Interesse an DeckRelay.
 
 ## Aktueller Projektmodus
 
-PartyPlayer befindet sich in der öffentlichen Beta. Fehlerberichte,
+DeckRelay befindet sich in der öffentlichen Beta. Fehlerberichte,
 Funktionsvorschläge und externe Code-Beiträge sind willkommen.
 
 ## Was wir aktuell gerne annehmen
@@ -41,7 +41,7 @@ Der Pull Request soll Zweck, zugehöriges Issue, Risiken und den Testnachweis ne
 ## Lizenz der Beiträge
 
 Mit dem Einreichen eines Beitrags erklärst du, dass du ihn unter derselben Lizenz
-wie PartyPlayer bereitstellst: GNU General Public License v3.0 oder später
+wie DeckRelay bereitstellst: GNU General Public License v3.0 oder später
 (`GPL-3.0-or-later`). Reiche ausschließlich Code und Ressourcen ein, für die du die
 erforderlichen Rechte besitzt und deren Lizenz mit dem Projekt vereinbar ist.
 

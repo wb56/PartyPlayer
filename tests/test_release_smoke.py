@@ -26,7 +26,7 @@ class FakeProcess:
 
     def wait(self, timeout: float | None = None) -> int:
         if self.cleanup_fails:
-            raise subprocess.TimeoutExpired("PartyPlayer.exe", timeout)
+            raise subprocess.TimeoutExpired("DeckRelay.exe", timeout)
         self._last = 0
         return 0
 
@@ -34,7 +34,7 @@ class FakeProcess:
 def release(tmp_path: Path) -> Path:
     root = tmp_path / "PartyPlayer"
     (root / "logs").mkdir(parents=True)
-    (root / "PartyPlayer.exe").write_bytes(b"exe")
+    (root / "DeckRelay.exe").write_bytes(b"exe")
     return root
 
 

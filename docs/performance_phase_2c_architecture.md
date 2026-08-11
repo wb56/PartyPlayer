@@ -1,4 +1,4 @@
-# PartyPlayer – Performance-Stabilisierung Phase 2C
+# DeckRelay – Performance-Stabilisierung Phase 2C
 
 ## Zweck und Geltungsbereich
 

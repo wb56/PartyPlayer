@@ -36,7 +36,7 @@ def _run_internal_vlc_probe(directory: Path, output_path: Path) -> None:
 
 
 def main() -> None:
-    """Start the Party Player desktop application."""
+    """Start the DeckRelay desktop application."""
     if len(sys.argv) == 4 and sys.argv[1] == "--internal-vlc-probe":
         _run_internal_vlc_probe(Path(sys.argv[2]), Path(sys.argv[3]))
         return
