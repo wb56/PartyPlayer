@@ -1,0 +1,55 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build and packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# Local runtime data
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.sqlite
+data/*.sqlite3
+
+# Logs and diagnostics (may contain local paths and user context)
+logs/*.log
+diagnostics/
+*.dmp
+*.stackdump
+
+# Local third-party tool binaries
+.tools/
+
+# Environment and secrets
+.env
+.env.*
+*.env
+*.key
+*.pem
+*.p12
+*.pfx
+*.secret
+secrets/
+
+# Local editor/OS artifacts
+.vscode/
+.idea/
+*.code-workspace
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Local planning
+TODO.md
+git_standard.md
+docs/arbeitsstand_naechste_sitzung.md
