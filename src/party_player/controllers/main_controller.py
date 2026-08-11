@@ -3120,6 +3120,19 @@ class MainController:
                         if generation != self._preload_generation:
                             return
                         self._preload_in_progress = False
+                        current_entry = self._queue_service.entry(entry.queue_id)
+                        if (
+                            current_entry is None
+                            or current_entry.status
+                            not in {QueueStatus.WAITING, QueueStatus.PREPARING}
+                        ):
+                            self._logger.info(
+                                "Verspätetes Preload-Ergebnis wird wegen Zustandsänderung verworfen"
+                            )
+                            self._transition.reset()
+                            self._refresh_queue()
+                            self._auto_load()
+                            return
                         self._queue_service.reject_candidate(entry.queue_id, availability)
                         self._transition.preload_failed(
                             deck.model.deck_id,
@@ -3161,6 +3174,19 @@ class MainController:
                     if generation != self._preload_generation:
                         return
                     self._preload_in_progress = False
+                    current_entry = self._queue_service.entry(entry.queue_id)
+                    if (
+                        current_entry is None
+                        or current_entry.status
+                        not in {QueueStatus.WAITING, QueueStatus.PREPARING}
+                    ):
+                        self._logger.info(
+                            "Verspäteter Preload-Fehler wird wegen Zustandsänderung verworfen"
+                        )
+                        self._transition.reset()
+                        self._refresh_queue()
+                        self._auto_load()
+                        return
                     self._queue_service.mark_error(entry.queue_id)
                     self._transition.preload_failed(deck.model.deck_id, captured_error)
                     self._logger.warning(
