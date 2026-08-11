@@ -16,6 +16,7 @@ import customtkinter as ctk  # type: ignore[import-untyped]
 from PIL import Image, ImageOps
 
 from party_player import __version__
+from party_player.product import PRODUCT_NAME
 from party_player.gui_callback import measured_gui_callback
 from party_player.gui_heartbeat_watchdog import GuiCallbackState
 from party_player.controllers.main_controller import (
@@ -1071,7 +1072,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
 
         title_frame = ctk.CTkFrame(self, fg_color="transparent")
         title_frame.grid(row=0, column=0, columnspan=3, padx=20, pady=(14, 8), sticky="w")
-        ctk.CTkLabel(title_frame, text="PARTYPLAYER", font=("Segoe UI", 28, "bold")).pack(
+        ctk.CTkLabel(title_frame, text=PRODUCT_NAME, font=("Segoe UI", 28, "bold")).pack(
             side="left"
         )
         ctk.CTkLabel(
