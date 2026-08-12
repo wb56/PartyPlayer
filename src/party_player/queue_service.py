@@ -543,8 +543,18 @@ class QueueService:
         """Finish one known queue entry without touching other deck assignments."""
         if status not in {QueueStatus.PLAYED, QueueStatus.SKIPPED}:
             raise ValueError("Ungültiger Queue-Endstatus")
-        if self._repository.get_queue_entry(queue_id) is not None:
-            self._transition(queue_id, status)
+        entry = self.entry(queue_id)
+        if entry is None or entry.status == status:
+            return
+        if entry.status != QueueStatus.PLAYING:
+            logging.getLogger(__name__).info(
+                "Veralteter Queue-Abschluss für Eintrag %s verworfen: %s → %s",
+                queue_id,
+                entry.status.value,
+                status.value,
+            )
+            return
+        self._transition(queue_id, status, expected_status=QueueStatus.PLAYING)
 
     def mark_playing_for_deck(self, deck_id: str, track_id: int) -> int | None:
         entries = self.entries()

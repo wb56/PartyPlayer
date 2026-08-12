@@ -964,6 +964,10 @@ class MainController:
         if incoming_queue_id is not None:
             entry = self._queue_service.entry(incoming_queue_id)
             if entry is not None and entry.status == QueueStatus.PLAYING:
+                with self._queue_playback_generation_lock:
+                    self._queue_playback_generations[incoming_queue_id] = (
+                        self._queue_playback_generations.get(incoming_queue_id, 0) + 1
+                    )
                 self._queue_service.mark_loaded(incoming_queue_id, incoming_id)
         if self._emergency is not None:
             self._emergency.report_transition_failure(outgoing_id, incoming_id, reason)
@@ -982,7 +986,8 @@ class MainController:
         )
         self._view.show_queue_warning(
             f"Übergang fehlgeschlagen. Deck {outgoing_id} bleibt hörbar; "
-            f"Deck {incoming_id} wurde stummgeschaltet."
+            f"Deck {incoming_id} wurde stummgeschaltet. Bitte Deck {incoming_id} "
+            "reparieren und danach die Automatik über die Rückkehrprüfung fortsetzen."
         )
         self._refresh_all()
 
@@ -1205,6 +1210,8 @@ class MainController:
             return False
         self._recovery_return_validation_required = False
         self._queue_service.record_audit_event("AUTOMATIC_RECOVERY_RESUME_CONFIRMED", details={})
+        if self._one_deck_mode.snapshot().mode == AudioOperatingMode.ONE_DECK:
+            self.return_to_two_deck_mode()
         self.start_automatic_queue()
         self._publish_recovery_return_requirements(force=True)
         return True

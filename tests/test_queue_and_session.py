@@ -835,6 +835,22 @@ def test_playing_deck_release_is_idempotent_after_concurrent_completion(
     assert completed.loaded_deck is None
 
 
+def test_stale_queue_completion_does_not_finish_reprepared_entry(tmp_path: Path) -> None:
+    database = database_with_tracks(tmp_path / "stale-queue-completion.db")
+    repository = PartyPlayerRepository(database)
+    session = repository.create_session("Stale completion")
+    service = QueueService(repository, TrackRepository(database), session.session_id)
+    entry = service.add(1)
+    service.mark_preparing(entry.queue_id, "A")
+    service.mark_loaded(entry.queue_id, "A")
+
+    service.mark_finished(entry.queue_id, QueueStatus.PLAYED)
+
+    current = service.entry(entry.queue_id)
+    assert current is not None
+    assert current.status == QueueStatus.READY
+
+
 def test_stale_deck_release_does_not_clear_a_new_assignment(tmp_path: Path) -> None:
     database = database_with_tracks(tmp_path / "stale-deck-release.db")
     repository = PartyPlayerRepository(database)

@@ -54,8 +54,13 @@ class TransitionState(StrEnum):
 class TransitionController:
     """Coordinate playback confirmation and an elapsed-time crossfade."""
 
-    START_WAIT_STEPS = 60
+    # Network-backed media can need several seconds before VLC reports actual
+    # playback even though the play command itself succeeded.  Keep the outgoing
+    # deck audible while waiting instead of treating normal NAS latency as a
+    # failed handover.
+    START_WAIT_STEPS = 160
     START_WAIT_INTERVAL_MS = 50
+    START_RETRY_STEP = 20
     FADE_INTERVAL_MS = 16
     RENDER_INTERVAL_MS = 100
 
@@ -238,6 +243,19 @@ class TransitionController:
         ):
             self.abort("Deckzustand während der Startprüfung geändert")
             return
+        if step == self.START_RETRY_STEP:
+            try:
+                incoming.play()
+                self._logger.warning(
+                    "Wiedergabestart auf Deck %s wird einmalig wiederholt",
+                    incoming.model.deck_id,
+                )
+            except Exception as exc:
+                self._logger.warning(
+                    "Wiederholung des Wiedergabestarts auf Deck %s fehlgeschlagen: %s",
+                    incoming.model.deck_id,
+                    exc,
+                )
         if step >= self.START_WAIT_STEPS:
             self.state = TransitionState.FAILED
             if self._failure is not None:

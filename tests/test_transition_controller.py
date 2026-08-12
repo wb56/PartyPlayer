@@ -114,9 +114,36 @@ def test_unconfirmed_incoming_playback_reports_structured_transition_failure() -
     assert failures == [("INCOMING_PLAYBACK_NOT_CONFIRMED", "A", "B")]
 
 
+def test_unconfirmed_incoming_playback_is_retried_once_before_failure() -> None:
+    deck_a = _loaded_deck("A", 1)
+    deck_b = _loaded_deck("B", 2)
+    deck_a.play()
+    deck_b.model.state = deck_a.model.state
+    scheduled: list[Callable[[], None]] = []
+    transition = TransitionController(
+        CrossfaderService(deck_a, deck_b),
+        lambda _delay, callback: scheduled.append(callback),
+        lambda: None,
+        lambda _deck, _track_id, _queue_id: None,
+    )
+    transition.START_RETRY_STEP = 1
+
+    transition.begin(deck_a, deck_b, 7)
+    scheduled.pop(0)()
+
+    assert transition.state == TransitionState.WAIT_FOR_ACTUAL_PLAYBACK
+    assert deck_b.backend.is_playing()
+    scheduled.pop(0)()
+    assert transition.state == TransitionState.CROSSFADE
+
+
 def test_audio_fade_frequency_is_independent_from_visible_render_frequency() -> None:
     assert TransitionController.FADE_INTERVAL_MS == 16
     assert TransitionController.RENDER_INTERVAL_MS >= 100
+    assert (
+        TransitionController.START_WAIT_STEPS * TransitionController.START_WAIT_INTERVAL_MS
+        >= 8000
+    )
 
 
 def test_crossfade_records_bounded_actual_gain_samples() -> None:

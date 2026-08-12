@@ -39,6 +39,7 @@ from party_player.equalizer_resolver import EqualizerResolver
 from party_player.enums import DeckState, QueueStatus, SessionStatus
 from party_player.loudness import LoudnessRepository, LoudnessService
 from party_player.models import Deck, QueueEntry, QueueStats, SavedQueue, Track
+from party_player.one_deck_mode import AudioOperatingMode
 from party_player.queue_service import QueueService
 from party_player.queue_view_events import QueueViewEvent, QueueViewEventType
 from party_player.playback_history_service import PlaybackHistoryService
@@ -803,6 +804,8 @@ def test_failed_transition_restores_outgoing_and_isolates_incoming_deck(
     assert controller.emergency_snapshot().deck_b == DeckHealth.FAILED
     assert controller.is_automatic_queue_paused()
     assert "Deck A bleibt hörbar" in view.queue_warnings[-1]
+    assert "Deck B reparieren" in view.queue_warnings[-1]
+    assert view.recovery_return_requirements[1]
 
 
 def test_one_deck_mode_suppresses_failed_deck_preload_and_restores_it(
@@ -2476,6 +2479,23 @@ def test_explicit_recovery_resume_rechecks_gates_and_starts_automation(
     assert controller._automatic_run_active
     assert controller.player_mode == "automatic"
     assert view.recovery_return_requirements == ((), False)
+
+
+def test_explicit_recovery_resume_returns_to_two_deck_operation(tmp_path: Path) -> None:
+    controller, _view = build_controller(tmp_path)
+    controller.add_catalog_track_to_queue(1)
+    controller.enter_one_deck_mode("A", "Deck B vorübergehend ausgefallen")
+    controller._emergency_state.set_deck_health("B", DeckHealth.HEALTHY, "Repariert")
+
+    assert controller.resume_automatic_after_recovery()
+
+    assert controller.audio_operating_mode().mode == AudioOperatingMode.TWO_DECK
+    assert not controller.deck_b.emergency_muted
+    assert "B" not in controller._auto_load_suppressed_decks
+    assert controller._automatic_run_active
+    assert any(
+        deck.model.state == DeckState.PLAYING for deck in (controller.deck_a, controller.deck_b)
+    )
 
 
 def test_explicit_recovery_resume_keeps_gate_when_safety_check_fails(
