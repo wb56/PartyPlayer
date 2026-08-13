@@ -808,6 +808,41 @@ def test_failed_transition_restores_outgoing_and_isolates_incoming_deck(
     assert view.recovery_return_requirements[1]
 
 
+def test_unconfirmed_incoming_track_is_skipped_and_one_deck_automation_continues(
+    tmp_path: Path,
+) -> None:
+    controller, view = build_controller(tmp_path, track_count=3, with_history=True)
+    controller.initialize()
+    controller.add_catalog_track_to_queue(1)
+    controller.add_catalog_track_to_queue(2)
+    controller.add_catalog_track_to_queue(3)
+    queue_a = controller._deck_queue_ids["A"]
+    queue_b = controller._deck_queue_ids["B"]
+    assert queue_a is not None and queue_b is not None
+    controller.deck_a.play()
+    controller.deck_b.play()
+    controller._queue_service.mark_playing(queue_a)
+    controller._queue_service.mark_playing(queue_b)
+    controller._automatic_run_active = True
+    controller._transition.state = TransitionState.FAILED
+
+    controller._handle_transition_failure(
+        "INCOMING_PLAYBACK_NOT_CONFIRMED", controller.deck_a, controller.deck_b
+    )
+
+    failed_entry = controller._queue_service.entry(queue_b)
+    assert failed_entry is not None
+    assert failed_entry.status == QueueStatus.SKIPPED
+    assert failed_entry.skip_code == "INCOMING_PLAYBACK_NOT_CONFIRMED"
+    assert controller.deck_b.model.loaded_track is None
+    assert controller._deck_queue_ids["B"] is None
+    assert controller.audio_operating_mode().active_deck_id == "A"
+    assert controller._transition.state == TransitionState.IDLE
+    assert controller._automatic_run_active
+    assert not controller.is_automatic_queue_paused()
+    assert "Ein-Deck-Betrieb" in view.queue_warnings[-1]
+
+
 def test_one_deck_mode_suppresses_failed_deck_preload_and_restores_it(
     tmp_path: Path,
 ) -> None:
@@ -1730,7 +1765,7 @@ def test_diagnostic_report_is_saved_with_context_and_without_file_paths(tmp_path
 
     assert report_path.name.startswith("deckrelay-diagnostic-")
     assert report.startswith("DeckRelay diagnostic report")
-    assert "Version: 1.0.0-beta.1" in report
+    assert "Version: 1.0.0-beta.2" in report
     assert "Test context: normal_playback" in report
     assert "Operating mode:" in report
     assert "status_tick.total:" in report

@@ -953,7 +953,9 @@ class MainController:
         """Restore the last audible deck and isolate a failed incoming handover."""
         outgoing_id = outgoing.model.deck_id
         incoming_id = incoming.model.deck_id
-        self._pause_automatic_queue(f"Übergang fehlgeschlagen: {reason}")
+        skip_unstarted_track = reason == "INCOMING_PLAYBACK_NOT_CONFIRMED"
+        if not skip_unstarted_track:
+            self._pause_automatic_queue(f"Übergang fehlgeschlagen: {reason}")
         incoming.set_emergency_muted(True)
         outgoing.set_emergency_muted(False)
         outgoing.set_transition_muted(False)
@@ -968,13 +970,40 @@ class MainController:
                     self._queue_playback_generations[incoming_queue_id] = (
                         self._queue_playback_generations.get(incoming_queue_id, 0) + 1
                     )
-                self._queue_service.mark_loaded(incoming_queue_id, incoming_id)
+                if skip_unstarted_track:
+                    if self._history is not None:
+                        self._history.finish(
+                            incoming_id,
+                            CompletionStatus.FAILED,
+                            incoming.model.position,
+                            error_message=reason,
+                            skip_code=HistoryReasonCode.PLAYBACK_ERROR,
+                        )
+                    self._queue_service.mark_skipped(
+                        incoming_queue_id,
+                        "Wiedergabe auf dem eingehenden Deck nicht bestätigt",
+                        code="INCOMING_PLAYBACK_NOT_CONFIRMED",
+                    )
+                    incoming.eject()
+                    self._deck_queue_ids[incoming_id] = None
+                    self._view.show_deck_cover(incoming_id, None)
+                else:
+                    self._queue_service.mark_loaded(incoming_queue_id, incoming_id)
         if self._emergency is not None:
             self._emergency.report_transition_failure(outgoing_id, incoming_id, reason)
         else:
             self._emergency_state.set_deck_health(incoming_id, DeckHealth.FAILED, reason)
         if self._one_deck_mode.snapshot().mode != AudioOperatingMode.ONE_DECK:
             self.enter_one_deck_mode(outgoing_id, f"Übergang fehlgeschlagen: {reason}")
+        if skip_unstarted_track:
+            # The healthy deck may still be finishing its current track. Keep the
+            # automatic runner alive; its regular completion path will free this
+            # deck and load the next waiting queue entry into it.
+            self._transition.reset()
+            self._automatic_run_active = True
+            self._automatic_run_paused = False
+            self._automatic_pause_reason = None
+            self._auto_load()
         self._queue_service.record_audit_event(
             "TRANSITION_FAILURE_STABILIZED",
             details={
@@ -984,11 +1013,17 @@ class MainController:
                 "incoming_queue_id": incoming_queue_id,
             },
         )
-        self._view.show_queue_warning(
-            f"Übergang fehlgeschlagen. Deck {outgoing_id} bleibt hörbar; "
-            f"Deck {incoming_id} wurde stummgeschaltet. Bitte Deck {incoming_id} "
-            "reparieren und danach die Automatik über die Rückkehrprüfung fortsetzen."
-        )
+        if skip_unstarted_track:
+            self._view.show_queue_warning(
+                f"Titel auf Deck {incoming_id} ohne bestätigte Wiedergabe übersprungen. "
+                f"Die Automatik wird im Ein-Deck-Betrieb auf Deck {outgoing_id} fortgesetzt."
+            )
+        else:
+            self._view.show_queue_warning(
+                f"Übergang fehlgeschlagen. Deck {outgoing_id} bleibt hörbar; "
+                f"Deck {incoming_id} wurde stummgeschaltet. Bitte Deck {incoming_id} "
+                "reparieren und danach die Automatik über die Rückkehrprüfung fortsetzen."
+            )
         self._refresh_all()
 
     def recover_all_audio_backends(self) -> GlobalAudioRecoveryResult:
