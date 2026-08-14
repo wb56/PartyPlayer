@@ -2,12 +2,64 @@ from pathlib import Path
 import sys
 
 from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.win32.versioninfo import (
+    FixedFileInfo,
+    StringFileInfo,
+    StringStruct,
+    StringTable,
+    VarFileInfo,
+    VarStruct,
+    VSVersionInfo,
+)
 
 
 project_dir = Path(SPECPATH)
 sys.path.insert(0, str(project_dir / "src"))
 
 from party_player.release_artifact import is_forbidden_dependency_path
+from party_player import __version__
+
+
+def windows_version(value: str) -> tuple[int, int, int, int]:
+    """Map a semantic beta version to the four-part Windows file version."""
+    release, _, prerelease = value.partition("-")
+    major, minor, patch = (int(part) for part in release.split("."))
+    beta = int(prerelease.removeprefix("beta.")) if prerelease.startswith("beta.") else 0
+    return major, minor, patch, beta
+
+
+numeric_version = windows_version(__version__)
+version_info = VSVersionInfo(
+    ffi=FixedFileInfo(
+        filevers=numeric_version,
+        prodvers=numeric_version,
+        mask=0x3F,
+        flags=0x0,
+        OS=0x40004,
+        fileType=0x1,
+        subtype=0x0,
+        date=(0, 0),
+    ),
+    kids=[
+        StringFileInfo(
+            [
+                StringTable(
+                    "040704B0",
+                    [
+                        StringStruct("CompanyName", "DeckRelay"),
+                        StringStruct("FileDescription", "DeckRelay"),
+                        StringStruct("FileVersion", __version__),
+                        StringStruct("InternalName", "DeckRelay"),
+                        StringStruct("OriginalFilename", "DeckRelay.exe"),
+                        StringStruct("ProductName", "DeckRelay"),
+                        StringStruct("ProductVersion", __version__),
+                    ],
+                )
+            ]
+        ),
+        VarFileInfo([VarStruct("Translation", [1031, 1200])]),
+    ],
+)
 
 datas = collect_data_files("customtkinter")
 
@@ -33,6 +85,7 @@ exe = EXE(
     exclude_binaries=True,
     name="DeckRelay",
     console=False,
+    version=version_info,
 )
 coll = COLLECT(
     exe,

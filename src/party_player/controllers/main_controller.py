@@ -248,6 +248,9 @@ class MainController:
 
     AUTOMATIC_OVERLAP_SECONDS = 7.0
     ONE_DECK_FADE_SECONDS = 1.0
+    ONE_DECK_START_WAIT_STEPS = 160
+    ONE_DECK_START_WAIT_INTERVAL_MS = 50
+    ONE_DECK_START_RETRY_STEP = 20
     CATALOG_PAGE_SIZE = 50
     MINIMUM_TRANSITION_PREPARATION_SECONDS = 0.5
     DIAGNOSTIC_CONTEXTS = {
@@ -375,6 +378,8 @@ class MainController:
         self._one_deck_mode = OneDeckModeService(
             lambda code, details: self._queue_service.record_audit_event(code, details=details)
         )
+        self._one_deck_start_generation = 0
+        self._one_deck_start_pending: str | None = None
         if self._deck_health_monitor is not None:
             self._deck_health_monitor.bind(deck_a)
             self._deck_health_monitor.bind(deck_b)
@@ -2725,52 +2730,56 @@ class MainController:
         skip_earlier: bool = True,
     ) -> str:
         """Describe the non-mutating queue/rule preview shown before automatic start."""
-        entries = [
-            entry
-            for entry in self._queue_service.entries()
-            if entry.status in {QueueStatus.WAITING, QueueStatus.READY}
-        ]
-        if from_selected and self._selected_queue_entry_id is not None:
-            selected = self._queue_service.entry(self._selected_queue_entry_id)
-            if selected is not None:
-                if skip_earlier:
-                    entries = [entry for entry in entries if entry.position >= selected.position]
+        with self._performance.measure(
+            "automatic_start.summary",
+            warning_threshold_ms=50.0,
+        ):
+            entries = [
+                entry
+                for entry in self._queue_service.entries()
+                if entry.status in {QueueStatus.WAITING, QueueStatus.READY}
+            ]
+            if from_selected and self._selected_queue_entry_id is not None:
+                selected = self._queue_service.entry(self._selected_queue_entry_id)
+                if selected is not None:
+                    if skip_earlier:
+                        entries = [
+                            entry for entry in entries if entry.position >= selected.position
+                        ]
+                    else:
+                        entries = [selected] + [
+                            entry for entry in entries if entry.queue_id != selected.queue_id
+                        ]
+
+            previews = self._queue_service.preview_candidate_decisions(entries)
+            blocked: list[tuple[QueueEntry, str]] = []
+            playable: list[QueueEntry] = []
+            for entry in entries:
+                _track, decision = previews[entry.queue_id]
+                if entry.status == QueueStatus.READY or decision.accepted:
+                    playable.append(entry)
                 else:
-                    entries = [selected] + [
-                        entry for entry in entries if entry.queue_id != selected.queue_id
-                    ]
+                    blocked.append((entry, decision.reason or decision.code))
 
-        blocked: list[tuple[QueueEntry, str]] = []
-        playable: list[QueueEntry] = []
-        for entry in entries:
-            if entry.status == QueueStatus.READY:
-                playable.append(entry)
-                continue
-            decision = self._queue_service.preview_candidate_decision(entry)
-            if decision.accepted:
-                playable.append(entry)
-            else:
-                blocked.append((entry, decision.reason or decision.code))
-
-        start_entry = playable[0] if playable else None
-        start_track = (
-            self._queue_service.track(start_entry.track_id) if start_entry is not None else None
-        )
-        lines = [
-            f"Starttitel: {start_track.title if start_track is not None else 'Kein spielbarer Titel'}",
-            f"Wartend/vorbereitet: {len(entries)}",
-            f"Voraussichtlich spielbar: {len(playable)}",
-            f"Durch Regeln blockiert: {len(blocked)}",
-        ]
-        if blocked:
-            lines.append("")
-            lines.append("Blockierte Titel:")
-            for entry, reason in blocked[:5]:
-                track = self._queue_service.track(entry.track_id)
-                lines.append(f"• {track.title if track is not None else entry.track_id}: {reason}")
-            if len(blocked) > 5:
-                lines.append(f"• … und {len(blocked) - 5} weitere")
-        return "\n".join(lines)
+            start_entry = playable[0] if playable else None
+            start_track = previews[start_entry.queue_id][0] if start_entry is not None else None
+            lines = [
+                f"Starttitel: {start_track.title if start_track is not None else 'Kein spielbarer Titel'}",
+                f"Wartend/vorbereitet: {len(entries)}",
+                f"Voraussichtlich spielbar: {len(playable)}",
+                f"Durch Regeln blockiert: {len(blocked)}",
+            ]
+            if blocked:
+                lines.append("")
+                lines.append("Blockierte Titel:")
+                for entry, reason in blocked[:5]:
+                    track = previews[entry.queue_id][0]
+                    lines.append(
+                        f"• {track.title if track is not None else entry.track_id}: {reason}"
+                    )
+                if len(blocked) > 5:
+                    lines.append(f"• … und {len(blocked) - 5} weitere")
+            return "\n".join(lines)
 
     def _prepare_automatic_start_from_selection(self, *, skip_earlier: bool = True) -> None:
         """Make the selected queue row the next automatic starting point."""
@@ -3163,11 +3172,10 @@ class MainController:
                             return
                         self._preload_in_progress = False
                         current_entry = self._queue_service.entry(entry.queue_id)
-                        if (
-                            current_entry is None
-                            or current_entry.status
-                            not in {QueueStatus.WAITING, QueueStatus.PREPARING}
-                        ):
+                        if current_entry is None or current_entry.status not in {
+                            QueueStatus.WAITING,
+                            QueueStatus.PREPARING,
+                        }:
                             self._logger.info(
                                 "Verspätetes Preload-Ergebnis wird wegen Zustandsänderung verworfen"
                             )
@@ -3217,11 +3225,10 @@ class MainController:
                         return
                     self._preload_in_progress = False
                     current_entry = self._queue_service.entry(entry.queue_id)
-                    if (
-                        current_entry is None
-                        or current_entry.status
-                        not in {QueueStatus.WAITING, QueueStatus.PREPARING}
-                    ):
+                    if current_entry is None or current_entry.status not in {
+                        QueueStatus.WAITING,
+                        QueueStatus.PREPARING,
+                    }:
                         self._logger.info(
                             "Verspäteter Preload-Fehler wird wegen Zustandsänderung verworfen"
                         )
@@ -4093,6 +4100,8 @@ class MainController:
     def _automatic_playback_tick(self) -> None:
         if not self._automatic_run_active or self._transition.is_transitioning:
             return
+        if self._preload_in_progress or self._one_deck_start_pending is not None:
+            return
         if self._one_deck_fade_pending:
             return
         playing = [
@@ -4128,7 +4137,7 @@ class MainController:
                 candidate.set_fade_level_immediately(0.0)
             self.deck_action(candidate.model.deck_id, "play", automatic=True)
             if not self._one_deck_mode.crossfade_allowed():
-                candidate.start_fade(1.0, self.ONE_DECK_FADE_SECONDS, self._view.schedule)
+                self._begin_one_deck_playback_confirmation(candidate)
             return
         if not self._one_deck_mode.crossfade_allowed():
             if len(playing) == 1:
@@ -4228,6 +4237,118 @@ class MainController:
             round(self.ONE_DECK_FADE_SECONDS * 1000) + 50,
             lambda: self._schedule_finished_deck_completion(deck),
         )
+
+    def _begin_one_deck_playback_confirmation(self, deck: DeckController) -> None:
+        """Keep a one-deck start muted until VLC shows real forward progress."""
+        self._one_deck_start_generation += 1
+        generation = self._one_deck_start_generation
+        deck_id = deck.model.deck_id
+        queue_id = self._deck_queue_ids.get(deck_id)
+        start_position = deck.backend.get_position()
+        self._one_deck_start_pending = deck_id
+        self._confirm_one_deck_playback(
+            deck,
+            queue_id,
+            start_position,
+            generation,
+            0,
+        )
+
+    def _confirm_one_deck_playback(
+        self,
+        deck: DeckController,
+        queue_id: int | None,
+        start_position: float,
+        generation: int,
+        step: int,
+    ) -> None:
+        if generation != self._one_deck_start_generation:
+            return
+        current_queue_id = self._deck_queue_ids.get(deck.model.deck_id)
+        if (
+            self._one_deck_start_pending != deck.model.deck_id
+            or current_queue_id != queue_id
+            or deck.model.loaded_track is None
+            or deck.model.state != DeckState.PLAYING
+        ):
+            self._one_deck_start_pending = None
+            return
+        actual_position = deck.backend.get_position()
+        if deck.backend.is_playing() and actual_position >= start_position + 0.1:
+            self._one_deck_start_pending = None
+            self._logger.info(
+                "Ein-Deck-Wiedergabe auf Deck %s bei %.2f Sekunden bestätigt",
+                deck.model.deck_id,
+                actual_position,
+            )
+            deck.start_fade(1.0, self.ONE_DECK_FADE_SECONDS, self._view.schedule)
+            return
+        if step == self.ONE_DECK_START_RETRY_STEP:
+            try:
+                deck.play()
+                self._logger.warning(
+                    "Ein-Deck-Wiedergabestart auf Deck %s wird einmalig wiederholt",
+                    deck.model.deck_id,
+                )
+            except Exception as exc:
+                self._logger.warning(
+                    "Wiederholung des Ein-Deck-Wiedergabestarts auf Deck %s fehlgeschlagen: %s",
+                    deck.model.deck_id,
+                    exc,
+                )
+        if step >= self.ONE_DECK_START_WAIT_STEPS:
+            self._handle_unconfirmed_one_deck_playback(deck, queue_id)
+            return
+
+        self._view.schedule(
+            self.ONE_DECK_START_WAIT_INTERVAL_MS,
+            lambda: self._confirm_one_deck_playback(
+                deck,
+                queue_id,
+                start_position,
+                generation,
+                step + 1,
+            ),
+        )
+
+    def _handle_unconfirmed_one_deck_playback(
+        self,
+        deck: DeckController,
+        queue_id: int | None,
+    ) -> None:
+        """Skip silent media and let the same deck try the next queue entry."""
+        self._one_deck_start_generation += 1
+        self._one_deck_start_pending = None
+        deck_id = deck.model.deck_id
+        if queue_id is not None:
+            if self._history is not None:
+                self._history.finish(
+                    deck_id,
+                    CompletionStatus.FAILED,
+                    deck.model.position,
+                    error_message="ONE_DECK_PLAYBACK_NOT_CONFIRMED",
+                    skip_code=HistoryReasonCode.PLAYBACK_ERROR,
+                )
+            entry = self._queue_service.entry(queue_id)
+            if entry is not None and entry.status == QueueStatus.PLAYING:
+                self._queue_service.mark_skipped(
+                    queue_id,
+                    "Ein-Deck-Wiedergabe nicht bestätigt",
+                    code="ONE_DECK_PLAYBACK_NOT_CONFIRMED",
+                )
+        deck.eject()
+        self._deck_queue_ids[deck_id] = None
+        self._view.show_deck_cover(deck_id, None)
+        self._logger.warning(
+            "Deck %s meldet im Ein-Deck-Betrieb keinen Wiedergabefortschritt; Titel übersprungen",
+            deck_id,
+        )
+        self._view.show_queue_warning(
+            f"Titel auf Deck {deck_id} ohne bestätigte Wiedergabe übersprungen; "
+            "der nächste Titel wird vorbereitet."
+        )
+        self._refresh_queue()
+        self._auto_load()
 
     def _deck_is_ready_for_automatic_playback(self, deck: DeckController) -> bool:
         """Do not start adopted media before its queue READY commit completes."""

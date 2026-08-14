@@ -210,6 +210,11 @@ class OverlayManagementDialog(ctk.CTkToplevel):  # type: ignore[misc]
         )
         self._secondary_actions.pack(side="right")
         self._refresh(reset_page=True)
+        # Start with a complete, valid definition.  Previously the form was
+        # empty until an existing overlay was selected or "+ Neues Overlay"
+        # was clicked, although the hidden cue and ducking fields are required
+        # by the form parser as well.
+        self._new()
 
     def focus_existing(self) -> None:
         self.deiconify()
@@ -352,20 +357,26 @@ class OverlayManagementDialog(ctk.CTkToplevel):  # type: ignore[misc]
         except ValueError as exc:
             raise ValueError(f"Cue-Out: {exc}") from exc
         assert cue_in_ms is not None
+        volume = self._parse_int_field("volume", "Lautstärke")
+        fade_in = self._parse_int_field("fade_in", "Fade-in")
+        fade_out = self._parse_int_field("fade_out", "Fade-out")
+        ducking_db = self._parse_float_field("ducking_db", "Ducking")
+        attack = self._parse_int_field("attack", "Attack")
+        release = self._parse_int_field("release", "Release")
         definition = OverlayDefinition(
             self._selected.definition.overlay_id if self._selected is not None else 0,
             self._fields["name"].get(),
             self._fields["file_path"].get(),
             self._fields["category"].get(),
-            int(self._fields["volume"].get()),
-            int(self._fields["fade_in"].get()),
-            int(self._fields["fade_out"].get()),
+            volume,
+            fade_in,
+            fade_out,
             cue_in_ms,
             cue_out_ms,
             bool(self._ducking.get()),
-            float(self._fields["ducking_db"].get()),
-            int(self._fields["attack"].get()),
-            int(self._fields["release"].get()),
+            ducking_db,
+            attack,
+            release,
         )
         return OverlayRecord(
             definition,
@@ -373,6 +384,20 @@ class OverlayManagementDialog(ctk.CTkToplevel):  # type: ignore[misc]
             favorite,
             f"Ctrl+{favorite}" if favorite is not None else None,
         )
+
+    def _parse_int_field(self, key: str, label: str) -> int:
+        value = self._fields[key].get().strip()
+        try:
+            return int(value)
+        except ValueError as exc:
+            raise ValueError(f"{label}: Bitte eine ganze Zahl eingeben") from exc
+
+    def _parse_float_field(self, key: str, label: str) -> float:
+        value = self._fields[key].get().strip().replace(",", ".")
+        try:
+            return float(value)
+        except ValueError as exc:
+            raise ValueError(f"{label}: Bitte eine Zahl eingeben") from exc
 
     def _save(self) -> bool:
         self._clear_field_errors()

@@ -141,8 +141,7 @@ def test_audio_fade_frequency_is_independent_from_visible_render_frequency() -> 
     assert TransitionController.FADE_INTERVAL_MS == 16
     assert TransitionController.RENDER_INTERVAL_MS >= 100
     assert (
-        TransitionController.START_WAIT_STEPS * TransitionController.START_WAIT_INTERVAL_MS
-        >= 8000
+        TransitionController.START_WAIT_STEPS * TransitionController.START_WAIT_INTERVAL_MS >= 8000
     )
 
 
