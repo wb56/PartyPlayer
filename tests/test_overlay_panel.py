@@ -4,8 +4,6 @@ from party_player.ui.overlay_presentation import (
     OverlayState,
     OverlayViewModel,
 )
-from party_player.overlay import OverlayStatus
-from party_player.ui.main_window import _overlay_favorite_reclick_fades
 
 
 def test_status_tooltip_keeps_complete_names_and_error_details() -> None:
@@ -46,10 +44,3 @@ def test_favorite_tooltip_contains_complete_metadata_and_safety_state() -> None:
         "Datei fehlt – in der Verwaltung neu zuweisen\n"
         "Jingle ist deaktiviert – in der Verwaltung aktivieren"
     )
-
-
-def test_pressing_active_favorite_fades_only_during_active_playback() -> None:
-    assert _overlay_favorite_reclick_fades(17, OverlayStatus.PLAYING, 17)
-    assert _overlay_favorite_reclick_fades(17, OverlayStatus.PREPARING, 17)
-    assert not _overlay_favorite_reclick_fades(17, OverlayStatus.FINISHED, 17)
-    assert not _overlay_favorite_reclick_fades(17, OverlayStatus.PLAYING, 18)

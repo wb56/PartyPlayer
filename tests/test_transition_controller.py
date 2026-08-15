@@ -90,6 +90,51 @@ def test_delayed_playback_check_accepts_forward_audio_progress() -> None:
     assert not deck_b.transition_muted
 
 
+def test_forward_position_confirms_playback_before_vlc_playing_flag() -> None:
+    deck_a = _loaded_deck("A", 1)
+    deck_b = _loaded_deck("B", 2)
+    deck_a.play()
+    deck_b.model.state = deck_a.model.state
+    deck_b.set_transition_muted(True)
+    scheduled: list[Callable[[], None]] = []
+    transition = TransitionController(
+        CrossfaderService(deck_a, deck_b),
+        lambda _delay, callback: scheduled.append(callback),
+        lambda: None,
+        lambda _deck, _track_id, _queue_id: None,
+    )
+    transition.begin(deck_a, deck_b, 7)
+    backend_b = deck_b.backend
+    assert isinstance(backend_b, FakeAudioBackend)
+    assert not backend_b.is_playing()
+    backend_b.position = 0.1
+
+    scheduled.pop(0)()
+
+    assert transition.state == TransitionState.CROSSFADE
+    assert not deck_b.transition_muted
+
+
+def test_unchanged_position_does_not_confirm_playback_without_vlc_flag() -> None:
+    deck_a = _loaded_deck("A", 1)
+    deck_b = _loaded_deck("B", 2)
+    deck_a.play()
+    deck_b.model.state = deck_a.model.state
+    scheduled: list[Callable[[], None]] = []
+    transition = TransitionController(
+        CrossfaderService(deck_a, deck_b),
+        lambda _delay, callback: scheduled.append(callback),
+        lambda: None,
+        lambda _deck, _track_id, _queue_id: None,
+    )
+
+    transition.begin(deck_a, deck_b, 7)
+    scheduled.pop(0)()
+
+    assert transition.state == TransitionState.WAIT_FOR_ACTUAL_PLAYBACK
+    assert scheduled
+
+
 def test_unconfirmed_incoming_playback_reports_structured_transition_failure() -> None:
     deck_a = _loaded_deck("A", 1)
     deck_b = _loaded_deck("B", 2)

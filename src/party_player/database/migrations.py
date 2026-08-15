@@ -1154,7 +1154,7 @@ def _migrate_to_v32(connection: sqlite3.Connection) -> None:
                 CHECK (fade_out_ms BETWEEN 0 AND 60000),
             ducking_enabled INTEGER NOT NULL DEFAULT 1
                 CHECK (ducking_enabled IN (0, 1)),
-            ducking_db REAL NOT NULL DEFAULT -8.0
+            ducking_db REAL NOT NULL DEFAULT 0.0
                 CHECK (ducking_db BETWEEN -60.0 AND 0.0),
             ducking_attack_ms INTEGER NOT NULL DEFAULT 200
                 CHECK (ducking_attack_ms BETWEEN 0 AND 60000),

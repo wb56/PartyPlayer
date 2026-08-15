@@ -215,27 +215,30 @@ class TransitionController:
     ) -> None:
         if generation != self._generation:
             return
-        if incoming.backend.is_playing():
-            actual_position = incoming.backend.get_position()
-            requested_position = incoming_start_position
-            # A busy GUI can delay this callback while audio continues on VLC's
-            # own thread. Forward progress therefore confirms playback just as
-            # reliably as an exact match with the requested start position.
-            if actual_position >= requested_position - 0.25:
-                self._logger.info(
-                    "Wiedergabe auf Deck %s bei %.2f Sekunden bestätigt",
-                    incoming.model.deck_id,
-                    actual_position,
-                )
-                self._start_crossfade(
-                    outgoing,
-                    incoming,
-                    outgoing_track_id,
-                    outgoing_queue_id,
-                    generation,
-                    boundaries,
-                )
-                return
+        backend_playing = incoming.backend.is_playing()
+        actual_position = incoming.backend.get_position()
+        requested_position = incoming_start_position
+        # Some VLC outputs advance their media clock several seconds before
+        # ``is_playing()`` becomes reliable. A forward-moving clock is direct
+        # evidence of decoded playback and must not leave audible audio muted.
+        position_advanced = actual_position >= requested_position + 0.05
+        if (backend_playing and actual_position >= requested_position - 0.25) or position_advanced:
+            evidence = "VLC-Status" if backend_playing else "Positionsfortschritt"
+            self._logger.info(
+                "Wiedergabe auf Deck %s bei %.2f Sekunden bestätigt (%s)",
+                incoming.model.deck_id,
+                actual_position,
+                evidence,
+            )
+            self._start_crossfade(
+                outgoing,
+                incoming,
+                outgoing_track_id,
+                outgoing_queue_id,
+                generation,
+                boundaries,
+            )
+            return
         if (
             outgoing.model.loaded_track is None
             or incoming.model.loaded_track is None

@@ -36,7 +36,7 @@ from party_player.emergency_actions import EmergencyActionProfile
 from party_player.emergency_playback import EmergencyPlaybackResult
 from party_player.source_availability_monitor import SourceAvailabilityMonitor
 from party_player.equalizer_resolver import EqualizerResolver
-from party_player.enums import DeckState, QueueStatus, SessionStatus
+from party_player.enums import DeckState, PlayerMode, QueueStatus, SessionStatus
 from party_player.loudness import LoudnessRepository, LoudnessService
 from party_player.models import Deck, QueueEntry, QueueStats, SavedQueue, Track
 from party_player.one_deck_mode import AudioOperatingMode
@@ -80,6 +80,7 @@ class FakeView:
         self.errors: list[str] = []
         self.queue_warnings: list[str] = []
         self.queue_stats: QueueStats | None = None
+        self.queue_origin = ""
         self.catalog_page = (1, 1)
         self.playlist: tuple[SavedQueue, list[Track]] | None = None
         self.confirm_queue_cues = True
@@ -200,6 +201,9 @@ class FakeView:
 
     def show_queue_stats(self, stats: QueueStats) -> None:
         self.queue_stats = stats
+
+    def show_queue_origin(self, text: str) -> None:
+        self.queue_origin = text
 
     def show_deck(self, deck: Deck) -> None:
         self.decks[deck.deck_id] = deck
@@ -808,7 +812,7 @@ def test_failed_transition_restores_outgoing_and_isolates_incoming_deck(
     assert view.recovery_return_requirements[1]
 
 
-def test_unconfirmed_incoming_track_is_skipped_and_one_deck_automation_continues(
+def test_unconfirmed_incoming_track_is_skipped_and_deck_is_preloaded_again(
     tmp_path: Path,
 ) -> None:
     controller, view = build_controller(tmp_path, track_count=3, with_history=True)
@@ -834,13 +838,15 @@ def test_unconfirmed_incoming_track_is_skipped_and_one_deck_automation_continues
     assert failed_entry is not None
     assert failed_entry.status == QueueStatus.SKIPPED
     assert failed_entry.skip_code == "INCOMING_PLAYBACK_NOT_CONFIRMED"
-    assert controller.deck_b.model.loaded_track is None
-    assert controller._deck_queue_ids["B"] is None
-    assert controller.audio_operating_mode().active_deck_id == "A"
+    assert controller.deck_b.model.loaded_track is not None
+    assert controller.deck_b.model.loaded_track.id == 3
+    assert controller._deck_queue_ids["B"] is not None
+    assert controller.audio_operating_mode().mode == AudioOperatingMode.TWO_DECK
+    assert controller.emergency_snapshot().deck_b == DeckHealth.HEALTHY
     assert controller._transition.state == TransitionState.IDLE
     assert controller._automatic_run_active
     assert not controller.is_automatic_queue_paused()
-    assert "Ein-Deck-Betrieb" in view.queue_warnings[-1]
+    assert "nächsten Preload bereit" in view.queue_warnings[-1]
 
 
 @pytest.mark.parametrize(("outgoing_id", "incoming_id"), (("A", "B"), ("B", "A")))
@@ -889,11 +895,12 @@ def test_unconfirmed_incoming_failure_is_symmetric_and_history_is_finished_once(
     assert failed is not None
     assert failed.status == QueueStatus.SKIPPED
     assert failed.skip_code == "INCOMING_PLAYBACK_NOT_CONFIRMED"
-    assert controller._deck_queue_ids[incoming_id] is None
-    assert incoming.model.loaded_track is None
-    assert incoming_id in controller._auto_load_suppressed_decks
+    assert controller._deck_queue_ids[incoming_id] is not None
+    assert incoming.model.loaded_track is not None
+    assert incoming.model.loaded_track.id == 3
+    assert incoming_id not in controller._auto_load_suppressed_decks
     assert outgoing_id not in controller._auto_load_suppressed_decks
-    assert controller.audio_operating_mode().active_deck_id == outgoing_id
+    assert controller.audio_operating_mode().mode == AudioOperatingMode.TWO_DECK
     assert controller._automatic_run_active
     assert not controller.is_automatic_queue_paused()
     with controller._queue_service._repository._database.connect() as connection:
@@ -906,6 +913,47 @@ def test_unconfirmed_incoming_failure_is_symmetric_and_history_is_finished_once(
     assert history[0]["completion_status"] == "FAILED"
     assert history[0]["error_message"] == "INCOMING_PLAYBACK_NOT_CONFIRMED"
     assert history[0]["skip_code"] == "PLAYBACK_ERROR"
+
+
+def test_manual_load_after_unconfirmed_start_allows_automatic_reactivation(
+    tmp_path: Path,
+) -> None:
+    controller, _view = build_controller(tmp_path, track_count=4)
+    controller.initialize()
+    for track_id in range(1, 4):
+        controller.add_catalog_track_to_queue(track_id)
+    queue_a = controller._deck_queue_ids["A"]
+    queue_b = controller._deck_queue_ids["B"]
+    assert queue_a is not None and queue_b is not None
+    controller.deck_b.play()
+    controller.deck_a.play()
+    controller._queue_service.mark_playing(queue_b)
+    controller._queue_service.mark_playing(queue_a)
+    controller._automatic_run_active = True
+    controller._transition.state = TransitionState.FAILED
+
+    controller._handle_transition_failure(
+        "INCOMING_PLAYBACK_NOT_CONFIRMED", controller.deck_b, controller.deck_a
+    )
+    controller._preload_in_progress = True
+    stale_generation = controller._preload_generation
+
+    controller.load_catalog_track(4, "A")
+
+    assert not controller._automatic_run_active
+    assert controller._transition.state == TransitionState.IDLE
+    assert not controller._preload_in_progress
+    assert controller._preload_generation > stale_generation
+    controller._transition.state = TransitionState.FAILED
+
+    controller.start_automatic_queue()
+
+    assert controller.player_mode == PlayerMode.AUTOMATIC
+    assert controller._automatic_run_active
+    assert not controller.is_automatic_queue_paused()
+    assert controller._transition.state == TransitionState.IDLE
+    assert not controller._preload_in_progress
+    assert not controller._auto_load_suppressed_decks
 
 
 def test_consecutive_unconfirmed_one_deck_tracks_do_not_loop_or_use_failed_deck(
@@ -1336,6 +1384,71 @@ def test_background_candidate_search_respects_empty_result_cooldown(
     controller._auto_load_in_background()
 
     assert not controller._preload_in_progress
+
+
+def test_large_playing_queue_does_not_search_when_inactive_deck_is_ready(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    controller, _view = build_controller(tmp_path, track_count=2, background_preload=True)
+    controller.initialize()
+    controller.set_automatic_deck_loading(False)
+    track_a = controller._library_service.get_track(1)
+    track_b = controller._library_service.get_track(2)
+    assert track_a is not None and track_b is not None
+    controller.deck_a.load(track_a, validate_file=False)
+    controller.deck_a.model.state = DeckState.PLAYING
+    controller.deck_b.load(track_b, validate_file=False)
+    controller._deck_queue_ids = {"A": 1, "B": 2}
+    controller._queue_entries_cache = [
+        QueueEntry(1, 1, 0, QueueStatus.PLAYING, loaded_deck="A"),
+        QueueEntry(2, 2, 1, QueueStatus.READY, loaded_deck="B"),
+        *(QueueEntry(queue_id, 1, queue_id - 1, QueueStatus.WAITING) for queue_id in range(3, 399)),
+    ]
+    searches = 0
+
+    def counted_search(*_args: object, **_kwargs: object) -> object:
+        nonlocal searches
+        searches += 1
+        return None
+
+    monkeypatch.setattr(controller._queue_service, "next_load_candidate", counted_search)
+
+    for _ in range(71):
+        controller._auto_load_in_background()
+
+    assert searches == 0
+    assert not controller._preload_in_progress
+
+
+def test_candidate_search_misses_use_exponential_backoff(tmp_path: Path) -> None:
+    controller, _view = build_controller(tmp_path, background_preload=True)
+    controller.initialize()
+    controller.set_automatic_deck_loading(False)
+
+    assert [controller._candidate_search_backoff_seconds(miss) for miss in range(1, 7)] == [
+        2,
+        4,
+        8,
+        16,
+        30,
+        30,
+    ]
+
+
+def test_irrelevant_queue_metadata_does_not_dirty_statistics(tmp_path: Path) -> None:
+    controller, _view = build_controller(tmp_path)
+    controller.initialize()
+    controller.set_automatic_deck_loading(False)
+    controller.add_catalog_track_to_queue(1)
+    controller._refresh_queue_stats()
+    assert not controller._queue_stats_dirty
+    entry = controller._queue_entries_cache[0]
+    controller._queue_entries_cache = [replace(entry, request_count=entry.request_count + 1)]
+    signature = controller._queue_statistics_signature(
+        controller._queue_entries_cache, controller._queue_tracks_cache
+    )
+
+    assert signature == controller._queue_stats_signature
 
 
 def test_background_preload_reconciles_stale_empty_deck_assignment(tmp_path: Path) -> None:
@@ -2664,7 +2777,9 @@ def test_recovery_return_checklist_reports_all_blockers_at_once(tmp_path: Path) 
     }
 
 
-def test_automatic_start_is_blocked_until_recovery_return_is_safe(tmp_path: Path) -> None:
+def test_automatic_start_is_blocked_until_recovery_return_is_safe(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     controller, view = build_controller(tmp_path)
     controller.add_catalog_track_to_queue(1)
     controller._global_audio_recovery_ready_for_release = True
@@ -2674,6 +2789,9 @@ def test_automatic_start_is_blocked_until_recovery_return_is_safe(tmp_path: Path
     assert not controller._automatic_run_active
     assert controller.player_mode != "automatic"
     assert "Sicherheits-Stummschaltung" in view.queue_warnings[-1]
+    assert "code=GLOBAL_MUTE_NOT_RELEASED" in caplog.text
+    assert "transition=idle" in caplog.text
+    assert "preload_aktiv=False" in caplog.text
 
 
 def test_explicit_recovery_resume_rechecks_gates_and_starts_automation(
@@ -3556,8 +3674,8 @@ def test_automatic_status_shows_next_remaining_and_repetition_skips(tmp_path: Pa
     controller._refresh_queue()
 
     assert view.automatic_status[0] == "ready"
-    assert "Nächster Titel: Song" in view.automatic_status[1]
-    assert "noch 2 Titel" in view.automatic_status[1]
+    assert "Nächster: Song" in view.automatic_status[1]
+    assert "2 Titel" in view.automatic_status[1]
     assert "1 übersprungen (1 Wiederholungsschutz)" in view.automatic_status[1]
 
 
@@ -3588,7 +3706,7 @@ def test_unchanged_crossfader_callback_does_not_pause_automatic_queue(tmp_path: 
     assert not controller.is_automatic_queue_paused()
 
 
-def test_explicit_pause_keeps_audio_and_can_resume(tmp_path: Path) -> None:
+def test_explicit_pause_stops_audio_and_can_resume(tmp_path: Path) -> None:
     controller, view = build_controller(tmp_path)
     controller.initialize()
     controller.add_catalog_track_to_queue(1)
@@ -3597,7 +3715,8 @@ def test_explicit_pause_keeps_audio_and_can_resume(tmp_path: Path) -> None:
 
     controller.pause_automatic_queue()
 
-    assert controller.deck_a.backend.is_playing()
+    assert not controller.deck_a.backend.is_playing()
+    assert controller.deck_a.model.state == DeckState.PAUSED
     assert controller.is_automatic_queue_paused()
     assert not controller._automatic_run_active
     assert view.automatic_status[0] == "paused"
@@ -3605,6 +3724,7 @@ def test_explicit_pause_keeps_audio_and_can_resume(tmp_path: Path) -> None:
     controller.start_automatic_queue()
 
     assert controller.deck_a.backend.is_playing()
+    assert controller.deck_a.model.state == DeckState.PLAYING
     assert controller._automatic_run_active
     assert not controller.is_automatic_queue_paused()
 
@@ -3781,7 +3901,7 @@ def test_automatic_start_with_empty_queue_stays_ready_and_explains_problem(
     assert controller.player_mode.value != "automatic"
     assert view.automatic_status[0] == "ready"
     assert view.automatic_status[1].startswith("Queue ist leer")
-    assert "noch 0 Titel" in view.automatic_status[1]
+    assert view.automatic_status[1] == "Queue ist leer"
     assert "keinen Titel" in view.queue_warnings[-1]
 
 

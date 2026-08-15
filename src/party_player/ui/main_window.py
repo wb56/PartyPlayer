@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import replace
+from functools import partial
 from io import BytesIO
 import logging
 import math
@@ -134,19 +135,6 @@ def _compact_equalizer_labels(labels: list[str], selected: str) -> list[str]:
         or label == selected
     ]
     return compact or [selected]
-
-
-def _overlay_favorite_reclick_fades(
-    active_overlay_id: int | None,
-    active_status: OverlayStatus,
-    selected_overlay_id: int,
-) -> bool:
-    """Return whether pressing the active soundboard pad should fade it out."""
-    return active_overlay_id == selected_overlay_id and active_status in {
-        OverlayStatus.PREPARING,
-        OverlayStatus.FADING_IN,
-        OverlayStatus.PLAYING,
-    }
 
 
 def _focus_and_break(widget: Any) -> str:
@@ -1337,10 +1325,23 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             font=(theme.FONT_FAMILY, 12),
         )
         self._queue_warning.pack(side="left", padx=(14, 0))
-        self._queue_stats = ctk.CTkLabel(
-            queue_header, text="Titel: 0 · Gesamt: 00:00 · Offen: 0 · Rest: 00:00"
-        )
+        self._queue_stats = ctk.CTkLabel(queue_header, text="0 Titel · 00:00")
         self._queue_stats.pack(side="right")
+        self._queue_stats_tooltip = Tooltip(
+            self._queue_stats,
+            "Gesamtlaufzeit 00:00 · verbleibende Laufzeit 00:00",
+        )
+        self._static_tooltips.append(self._queue_stats_tooltip)
+        self._queue_source_button = ctk.CTkButton(
+            queue_header,
+            text="Quelle hinzufügen ▾",
+            width=190,
+            height=30,
+            fg_color=theme.SURFACE_RAISED,
+            hover_color=theme.SURFACE_HOVER,
+            command=self._show_queue_source_menu,
+        )
+        self._queue_source_button.pack(side="right", padx=(8, 0))
         self._queue_next_button = ctk.CTkButton(
             queue_header,
             text="▶",
@@ -1374,22 +1375,20 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             command=self._duplicate_policy_changed,
         )
         self._duplicate_switch.select()
-        self._duplicate_switch.pack(side="left")
         self._effective_duration_switch = ctk.CTkSwitch(
             queue_toolbar,
             text="⏱",
             width=48,
             command=self._queue_duration_mode_changed,
         )
-        self._effective_duration_switch.pack(side="left", padx=(8, 0))
         self._artist_repetition_switch = ctk.CTkSwitch(
             queue_toolbar,
-            text="Interpret-Schutz",
+            text="Interpretenschutz",
             command=self._queue_artist_repetition_changed,
         )
         self._artist_repetition_switch.select()
         self._artist_repetition_switch.pack(side="left", padx=(8, 0))
-        ctk.CTkLabel(queue_toolbar, text="EQ Queue:").pack(side="left", padx=(10, 4))
+        ctk.CTkLabel(queue_toolbar, text="Queue-EQ:").pack(side="left", padx=(10, 4))
         self._queue_equalizer_menu = ctk.CTkOptionMenu(
             queue_toolbar,
             values=["Vererben", "Equalizer aus"],
@@ -1408,18 +1407,17 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             hover_color=theme.SURFACE_HOVER,
             command=self._choose_queue_directory,
         )
-        directory_button.pack(side="left", padx=8)
         shuffle_button = ctk.CTkButton(
             queue_toolbar,
-            text="⇄",
-            width=theme.ICON_BUTTON_SIZE,
+            text="Mischen",
+            width=82,
             height=32,
             corner_radius=theme.CONTROL_CORNER_RADIUS,
             fg_color=theme.SURFACE_RAISED,
             hover_color=theme.SURFACE_HOVER,
             command=self._shuffle_waiting_queue,
         )
-        shuffle_button.pack(side="left", padx=2)
+        shuffle_button.pack(side="left", padx=(8, 2))
         clear_button = ctk.CTkButton(
             queue_toolbar,
             text="⌛×",
@@ -1430,7 +1428,6 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             hover_color=theme.DANGER_HOVER,
             command=self._clear_waiting_queue,
         )
-        clear_button.pack(side="right")
         clear_complete_button = ctk.CTkButton(
             queue_toolbar,
             text="🗑",
@@ -1441,7 +1438,32 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             hover_color=theme.DANGER_HOVER,
             command=self._clear_complete_queue,
         )
-        clear_complete_button.pack(side="right", padx=6)
+        self._queue_actions_button = ctk.CTkButton(
+            queue_toolbar,
+            text="⋮",
+            width=theme.ICON_BUTTON_SIZE,
+            height=32,
+            fg_color=theme.SURFACE_RAISED,
+            hover_color=theme.SURFACE_HOVER,
+            command=self._show_queue_actions_menu,
+        )
+        self._queue_actions_button.pack(side="right")
+        self._automatic_queue_active = False
+        self._automatic_queue_button = ctk.CTkButton(
+            queue_toolbar,
+            text="▶",
+            width=theme.ICON_BUTTON_SIZE,
+            height=32,
+            command=self._toggle_automatic_queue,
+        )
+        self._automatic_queue_button.pack(side="right", padx=(6, 4))
+        self._automatic_status_label = ctk.CTkLabel(
+            queue_toolbar,
+            text="Automatik bereit",
+            text_color=theme.TEXT_MUTED,
+            anchor="e",
+        )
+        self._automatic_status_label.pack(side="right", fill="x", expand=True, padx=(8, 2))
         self._static_tooltips.extend(
             (
                 Tooltip(
@@ -1454,12 +1476,21 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
                 Tooltip(self._queue_previous_button, "Vorherigen Queue-Ausschnitt anzeigen"),
                 Tooltip(self._queue_next_button, "Nächsten Queue-Ausschnitt anzeigen"),
                 Tooltip(
+                    self._queue_source_button,
+                    "Aktuelle Herkunft anzeigen und weitere Titel zur Queue hinzufügen",
+                ),
+                Tooltip(
                     directory_button,
                     "Alle MP3-/FLAC-Dateien eines Ordners in Katalog und Queue aufnehmen",
                 ),
                 Tooltip(shuffle_button, "Wartende Titel zufällig neu anordnen"),
                 Tooltip(clear_button, "Alle wartenden Titel nach Bestätigung entfernen"),
                 Tooltip(clear_complete_button, "Alle Queue-Einträge vollständig entfernen"),
+                Tooltip(self._queue_actions_button, "Weitere Queue- und Playlist-Befehle"),
+                Tooltip(
+                    self._automatic_queue_button,
+                    "Automatische Wiedergabe starten, fortsetzen oder stoppen",
+                ),
             )
         )
         self._directory_progress_frame = ctk.CTkFrame(center, fg_color="transparent")
@@ -1474,14 +1505,16 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._directory_progress_frame.grid_remove()
         saved_toolbar = ctk.CTkFrame(center, fg_color="transparent")
         saved_toolbar.grid(row=8, column=0, padx=12, pady=2, sticky="ew")
-        ctk.CTkLabel(saved_toolbar, text="Playlist:").pack(side="left", padx=(0, 6))
+        ctk.CTkLabel(saved_toolbar, text="Titel hinzufügen aus Playlist:").pack(
+            side="left", padx=(0, 6)
+        )
         self._saved_queue_menu = ctk.CTkOptionMenu(
             saved_toolbar,
             values=["Keine gespeichert"],
             command=self._saved_queue_selected,
         )
         self._saved_queue_menu.pack(side="left", fill="x", expand=True)
-        ctk.CTkLabel(saved_toolbar, text="EQ:").pack(side="left", padx=(8, 4))
+        ctk.CTkLabel(saved_toolbar, text="Playlist-Vorlage-EQ:").pack(side="left", padx=(8, 4))
         self._playlist_equalizer_menu = ctk.CTkOptionMenu(
             saved_toolbar,
             values=["Vererben", "Equalizer aus"],
@@ -1516,21 +1549,6 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             command=self._show_saved_queue,
         )
         show_playlist_button.pack(side="left", padx=(4, 0))
-        self._automatic_queue_active = False
-        self._automatic_queue_button = ctk.CTkButton(
-            saved_toolbar,
-            text="▶",
-            width=theme.ICON_BUTTON_SIZE,
-            height=32,
-            command=self._toggle_automatic_queue,
-        )
-        self._automatic_queue_button.pack(side="left", padx=(8, 0))
-        self._automatic_status_label = ctk.CTkLabel(
-            saved_toolbar,
-            text="Automatik bereit",
-            text_color=theme.TEXT_MUTED,
-        )
-        self._automatic_status_label.pack(side="left", padx=(8, 0))
         automatic_help_button = ctk.CTkButton(
             saved_toolbar,
             text="?",
@@ -1549,13 +1567,11 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
                     "Ausgewählte Playlist in die aktuelle Queue laden",
                 ),
                 Tooltip(show_playlist_button, "Titel der ausgewählten Playlist anzeigen"),
-                Tooltip(
-                    self._automatic_queue_button,
-                    "Automatische Wiedergabe mit Deckwechsel und Crossfade starten oder stoppen",
-                ),
                 Tooltip(automatic_help_button, "Hilfe zu Queue, Playlist und Automatik"),
             )
         )
+        self._saved_toolbar = saved_toolbar
+        self._saved_toolbar.grid_remove()
         self._queue = SmoothScrollableFrame(center)
         self._queue.grid(row=9, column=0, padx=12, pady=(2, 12), sticky="nsew")
         self._queue.set_scroll_callback(self._queue_scrolled)
@@ -4022,14 +4038,6 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
                 record.definition.overlay_id,
             )
             return
-        active_definition = self._overlay_runtime.definition
-        if _overlay_favorite_reclick_fades(
-            active_definition.overlay_id if active_definition is not None else None,
-            self._overlay_runtime.status,
-            record.definition.overlay_id,
-        ):
-            self._fade_out_overlay()
-            return
         self._selected_overlay = record
         self._overlay_panel.select(
             category=record.definition.category or "Alle",
@@ -4557,7 +4565,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             )
             self._queue_page_label.configure(
                 text=(
-                    f"Titel {self._queue_visible_start_index + 1}–{logical_end}"
+                    f"{self._queue_visible_start_index + 1}–{logical_end}"
                     f"/{len(self._queue_entries)}"
                     if self._queue_entries
                     else "Queue leer"
@@ -4731,13 +4739,17 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             )
 
     def show_queue_stats(self, stats: QueueStats) -> None:
-        text = (
-            f"Titel: {stats.total_tracks} · Gesamt: {_duration_text(stats.total_duration)} · "
-            f"Offen: {stats.remaining_tracks} · Rest: {_duration_text(stats.remaining_duration)}"
-        )
+        text = f"{stats.total_tracks} Titel · {_duration_text(stats.total_duration)}"
         if text != self._queue_stats_text:
             self._queue_stats.configure(text=text)
             self._queue_stats_text = text
+        self._queue_stats_tooltip.set_text(
+            f"Gesamtlaufzeit {_duration_text(stats.total_duration)} · "
+            f"verbleibende Laufzeit {_duration_text(stats.remaining_duration)}"
+        )
+
+    def show_queue_origin(self, text: str) -> None:
+        self._queue_source_button.configure(text=f"Quelle: {text} ▾")
 
     def show_deck(self, deck: Deck) -> None:
         (self.deck_a if deck.deck_id == "A" else self.deck_b).render(deck)
@@ -4875,15 +4887,15 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
     def show_automatic_status(self, state: str, detail: str = "") -> None:
         labels = {
             "ready": ("Automatik bereit", theme.TEXT_MUTED),
-            "running": ("Automatik läuft", theme.SUCCESS),
-            "transition": ("Automatik: Übergang", theme.READY),
-            "paused": ("Automatik pausiert", theme.WARNING),
+            "running": ("Automatik aktiv", theme.SUCCESS),
+            "transition": ("Übergang läuft", theme.READY),
+            "paused": ("Automatik nicht aktiv", theme.WARNING),
             "stopped": ("Automatik beendet", theme.ERROR),
             "completed": ("Automatik abgeschlossen", theme.SUCCESS),
         }
         text, color = labels.get(state, ("Automatik bereit", theme.TEXT_MUTED))
         if detail:
-            text = f"{text}: {detail}"
+            text = f"{text} · {detail}"
         self._automatic_status_label.configure(text=text, text_color=color)
 
     def show_queue_duplicate_policy(self, policy: str) -> None:
@@ -5475,6 +5487,86 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             lambda: controller.set_current_queue_equalizer(None if key == "inherit" else key)
         )
 
+    def _show_queue_source_menu(self) -> None:
+        menu = tk.Menu(self, tearoff=False)
+        menu.add_command(label="Dateien hinzufügen…", command=self._choose_queue_files)
+        menu.add_command(label="Verzeichnis hinzufügen…", command=self._choose_queue_directory)
+        playlist_menu = tk.Menu(menu, tearoff=False)
+        if self._saved_queue_ids:
+            for name in self._saved_queue_ids:
+                playlist_menu.add_command(
+                    label=name,
+                    command=partial(self._load_playlist_from_source_menu, name),
+                )
+        else:
+            playlist_menu.add_command(label="Keine Playlist gespeichert", state="disabled")
+        menu.add_cascade(label="Playlist hinzufügen", menu=playlist_menu)
+        menu.add_separator()
+        menu.add_command(
+            label="Katalogauswahl hinzufügen: + am Titel",
+            command=self._focus_search,
+        )
+        self._post_button_menu(menu, self._queue_source_button)
+
+    def _show_queue_actions_menu(self) -> None:
+        menu = tk.Menu(self, tearoff=False)
+        duplicate_label, duration_label = self._queue_toggle_menu_labels(
+            bool(self._duplicate_switch.get()),
+            bool(self._effective_duration_switch.get()),
+        )
+        menu.add_command(
+            label=duplicate_label,
+            command=lambda: self._toggle_hidden_switch(
+                self._duplicate_switch, self._duplicate_policy_changed
+            ),
+        )
+        menu.add_command(
+            label=duration_label,
+            command=lambda: self._toggle_hidden_switch(
+                self._effective_duration_switch, self._queue_duration_mode_changed
+            ),
+        )
+        menu.add_separator()
+        menu.add_command(
+            label="Playlist-Werkzeuge ein-/ausblenden", command=self._toggle_saved_toolbar
+        )
+        menu.add_command(
+            label="Aktuelle Queue als Playlist speichern…", command=self._save_current_queue
+        )
+        menu.add_separator()
+        menu.add_command(label="Wartende Titel entfernen…", command=self._clear_waiting_queue)
+        menu.add_command(label="Gesamte Queue leeren…", command=self._clear_complete_queue)
+        self._post_button_menu(menu, self._queue_actions_button)
+
+    @staticmethod
+    def _queue_toggle_menu_labels(
+        duplicates_allowed: bool, effective_cue_duration: bool
+    ) -> tuple[str, str]:
+        return (
+            f"Duplikate erlauben: {'aktiv' if duplicates_allowed else 'inaktiv'}",
+            f"Cue-Restlaufzeit: {'aktiv' if effective_cue_duration else 'inaktiv'}",
+        )
+
+    @staticmethod
+    def _post_button_menu(menu: tk.Menu, button: Any) -> None:
+        menu.tk_popup(button.winfo_rootx(), button.winfo_rooty() + button.winfo_height())
+
+    @staticmethod
+    def _toggle_hidden_switch(widget: Any, callback: Callable[[], None]) -> None:
+        widget.toggle()
+        callback()
+
+    def _toggle_saved_toolbar(self) -> None:
+        if self._saved_toolbar.winfo_ismapped():
+            self._saved_toolbar.grid_remove()
+        else:
+            self._saved_toolbar.grid()
+
+    def _load_playlist_from_source_menu(self, name: str) -> None:
+        self._saved_queue_menu.set(name)
+        self._sync_playlist_equalizer_menu()
+        self._load_saved_queue()
+
     def _saved_queue_selected(self, _name: str) -> None:
         self._sync_playlist_equalizer_menu()
 
@@ -5513,6 +5605,16 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         directory = filedialog.askdirectory(title="Musikverzeichnis für die Party-Queue wählen")
         if directory:
             self._controller.import_directory_to_queue(directory)
+
+    def _choose_queue_files(self) -> None:
+        if self._controller is None:
+            return
+        paths = filedialog.askopenfilenames(
+            title="Audiodateien zur Party-Queue hinzufügen",
+            filetypes=(("MP3 und FLAC", "*.mp3 *.flac"), ("Alle Dateien", "*.*")),
+        )
+        for path in paths:
+            self._controller.import_file_to_queue(path)
 
     def _choose_catalog_file(self) -> None:
         if self._controller is None:

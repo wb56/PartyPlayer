@@ -63,6 +63,7 @@ def overlay(tmp_path: Path, overlay_id: int = 1, name: str = "Tusch") -> Overlay
         str(tmp_path / "jingle.mp3"),
         fade_in_ms=10,
         fade_out_ms=10,
+        ducking_db=-8.0,
         ducking_attack_ms=10,
         ducking_release_ms=10,
     )
@@ -119,6 +120,27 @@ def test_overlay_switch_waits_for_safe_stop_then_starts_pending_item(tmp_path: P
     ]
     positions = [switch_events.index(event) for event in expected_order]
     assert positions == sorted(positions)
+    controller.close()
+
+
+def test_same_overlay_can_be_retriggered_repeatedly(tmp_path: Path) -> None:
+    controller, snapshots, _duck_values = build_controller(tmp_path)
+    item = overlay(tmp_path)
+
+    for expected_starts in range(1, 6):
+        controller.start(item)
+        wait_until(
+            lambda: len(
+                [snapshot for snapshot in snapshots if snapshot.status == OverlayStatus.PLAYING]
+            )
+            == expected_starts
+        )
+
+    played = [snapshot for snapshot in snapshots if snapshot.status == OverlayStatus.PLAYING]
+    assert len(played) == 5
+    assert all(snapshot.definition == item for snapshot in played)
+    assert len({snapshot.generation for snapshot in played}) == 5
+    assert controller.diagnostics()["pending_switch"] == ""
     controller.close()
 
 
@@ -435,8 +457,8 @@ def test_second_overlay_supersedes_stale_slow_prepare_callback(tmp_path: Path) -
         duration_resolver=duration,
     )
     holder["controller"] = controller
-    first = OverlayDefinition(1, "Langsam", str(first_path), ducking_attack_ms=0)
-    second = OverlayDefinition(2, "Danach", str(second_path), ducking_attack_ms=0)
+    first = OverlayDefinition(1, "Langsam", str(first_path), ducking_db=-8.0, ducking_attack_ms=0)
+    second = OverlayDefinition(2, "Danach", str(second_path), ducking_db=-8.0, ducking_attack_ms=0)
 
     controller.start(first)
     assert entered.wait(1.0)
@@ -492,6 +514,7 @@ def test_close_records_stop_and_restores_ducking(tmp_path: Path) -> None:
             "Tusch",
             str(file_path),
             fade_in_ms=0,
+            ducking_db=-8.0,
             ducking_attack_ms=0,
         )
     )

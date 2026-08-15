@@ -77,7 +77,7 @@ class DeckController:
         if self.model.state == DeckState.FINISHED:
             self.backend.stop()
             self.model.position = 0.0
-        self._perform(self.backend.play, DeckState.PLAYING, "Wiedergabe gestartet")
+        self._perform(self.backend.play, DeckState.PLAYING, "Wiedergabestart angefordert")
 
     def pause(self) -> None:
         self._perform(self.backend.pause, DeckState.PAUSED, "Wiedergabe pausiert")
@@ -220,11 +220,19 @@ class DeckController:
 
     def update_status(self) -> None:
         position = self.backend.get_position()
-        if position > 0 or not self.backend.is_finished():
+        state_reader = getattr(self.backend, "playback_state", None)
+        playback_state = (
+            str(state_reader()).upper()
+            if callable(state_reader)
+            else ("ENDED" if self.backend.is_finished() else "UNKNOWN")
+        )
+        self.model.backend_state = playback_state
+        finished = playback_state == "ENDED"
+        if position > 0 or not finished:
             self.model.position = position
         if self.model.duration <= 0:
             self.model.duration = self.backend.get_duration() or self.model.duration
-        if self.model.state == DeckState.PLAYING and self.backend.is_finished():
+        if self.model.state == DeckState.PLAYING and finished:
             self.model.position = self.model.duration
             self.model.state = DeckState.FINISHED
 

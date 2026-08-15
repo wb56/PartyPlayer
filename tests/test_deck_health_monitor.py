@@ -4,6 +4,7 @@ from party_player.deck_health_monitor import DeckHealthMonitor
 from party_player.emergency_state import DeckHealth, EmergencyStateService, EmergencySystemState
 from party_player.enums import DeckState
 from party_player.models import Track
+import logging
 
 
 class FakeClock:
@@ -65,6 +66,45 @@ def test_position_progress_clears_suspicion_and_warning() -> None:
 
     assert recovered.health == DeckHealth.HEALTHY
     assert state.snapshot().system == EmergencySystemState.NORMAL
+
+
+def test_stall_diagnostics_include_worker_gui_statistics_and_source_context(
+    caplog,
+) -> None:
+    clock = FakeClock()
+    monitor = DeckHealthMonitor(
+        EmergencyStateService(),
+        local_stall_seconds=1,
+        network_stall_seconds=1,
+        confirmation_seconds=1,
+        clock=clock,
+    )
+    monitor.set_diagnostic_context_provider(
+        lambda _deck_id: {
+            "gui_heartbeat_age_ms": 1250.0,
+            "active_workers": ("queue-statistics",),
+            "queue_statistics_pending": True,
+            "source_state": "ERREICHBAR",
+        }
+    )
+    deck, backend = playing_deck(r"\\server\music\track.mp3")
+    deck.update_status()
+    monitor.observe(deck)
+    clock.advance(1)
+
+    with caplog.at_level(logging.WARNING):
+        monitor.observe(deck)
+
+    message = "\n".join(record.getMessage() for record in caplog.records)
+    assert "audio.stall_suspected" in message
+    assert "queue-statistics" in message
+    assert "gui_heartbeat_age_ms" in message
+    assert "ERREICHBAR" in message
+    backend.position = 0.5
+    deck.update_status()
+    clock.advance(0.5)
+    monitor.observe(deck)
+    assert any("audio.stall_recovered" in record.getMessage() for record in caplog.records)
 
 
 def test_pause_is_never_reported_as_stall() -> None:

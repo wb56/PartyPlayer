@@ -18,7 +18,7 @@ data/*.sqlite
 data/*.sqlite3
 
 # Logs and diagnostics (may contain local paths and user context)
-logs/*.log
+logs/
 diagnostics/
 *.dmp
 *.stackdump
@@ -45,6 +45,7 @@ Thumbs.db
 Desktop.ini
 
 # Temporary files
+=
 *.tmp
 *.temp
 *.bak

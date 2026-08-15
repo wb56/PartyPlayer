@@ -249,6 +249,12 @@ class VlcAudioBackend:
     def is_finished(self) -> bool:
         return bool(self._player.get_state() == self._vlc.State.Ended)
 
+    def playback_state(self) -> str:
+        """Expose the current VLC state for the existing status/diagnostic sample."""
+        state = self._player.get_state()
+        name = getattr(state, "name", None)
+        return str(name or state).rsplit(".", 1)[-1].upper()
+
     def close(self) -> None:
         with self._lifecycle_lock:
             if self._closed:

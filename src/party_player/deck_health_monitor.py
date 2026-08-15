@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 from collections.abc import Callable
+import logging
 
 from party_player.deck_controller import DeckController
 from party_player.emergency_state import DeckHealth, EmergencyStateService, EmergencySystemState
@@ -26,6 +27,9 @@ class _DeckProgress:
     last_progress_at: float = 0.0
     suspected_at: float | None = None
     consecutive_command_failures: int = 0
+    backend_state: str = "UNKNOWN"
+    last_health: DeckHealth | None = None
+    stall_logged_at: float | None = None
 
 
 class DeckHealthMonitor:
@@ -49,8 +53,13 @@ class DeckHealthMonitor:
         self._epsilon = max(0.001, progress_epsilon_seconds)
         self._command_failure_threshold = max(1, command_failure_threshold)
         self._clock = clock
+        self._logger = logging.getLogger(__name__)
+        self._diagnostic_context: Callable[[str], dict[str, object]] = lambda _deck_id: {}
         self._progress = {"A": _DeckProgress(), "B": _DeckProgress()}
         self._output_device_failure_health: dict[str, DeckHealth] | None = None
+
+    def set_diagnostic_context_provider(self, provider: Callable[[str], dict[str, object]]) -> None:
+        self._diagnostic_context = provider
 
     def bind(self, deck: DeckController) -> None:
         """Receive all load and transport outcomes from a deck."""
@@ -130,6 +139,30 @@ class DeckHealthMonitor:
         track = deck.model.loaded_track
         track_id = track.id if track is not None else None
         network = self._is_network_path(track.file_path if track is not None else "")
+        backend_state = deck.model.backend_state
+        if backend_state != progress.backend_state:
+            self._logger.info(
+                "audio.vlc_state deck=%s previous=%s current=%s expected=%s context=%s",
+                deck_id,
+                progress.backend_state,
+                backend_state,
+                deck.model.state.value,
+                self._diagnostic_context(deck_id),
+            )
+            progress.backend_state = backend_state
+        if deck.model.state == DeckState.PLAYING and backend_state in {
+            "BUFFERING",
+            "PAUSED",
+            "STOPPED",
+            "ERROR",
+        }:
+            self._logger.warning(
+                "audio.vlc_unexpected_state deck=%s state=%s position=%.3f context=%s",
+                deck_id,
+                backend_state,
+                deck.model.position,
+                self._diagnostic_context(deck_id),
+            )
 
         if deck.model.state == DeckState.ERROR:
             return self._set_failed(deck_id, deck.model.error_message or "Deckfehler", network)
@@ -154,6 +187,25 @@ class DeckHealthMonitor:
             )
 
         if deck.model.position >= progress.position + self._epsilon:
+            elapsed = max(0.0, now - progress.last_progress_at)
+            delta = deck.model.position - progress.position
+            if elapsed > 0 and delta > max(2.0, elapsed * 3.0):
+                self._logger.warning(
+                    "audio.position_jump deck=%s delta=%.3f elapsed=%.3f position=%.3f context=%s",
+                    deck_id,
+                    delta,
+                    elapsed,
+                    deck.model.position,
+                    self._diagnostic_context(deck_id),
+                )
+            if progress.stall_logged_at is not None:
+                self._logger.warning(
+                    "audio.stall_recovered deck=%s duration=%.3f position=%.3f context=%s",
+                    deck_id,
+                    now - progress.stall_logged_at,
+                    deck.model.position,
+                    self._diagnostic_context(deck_id),
+                )
             self._reset_progress(progress, track_id, deck.model.position, now)
             self._state.set_deck_health(deck_id, DeckHealth.HEALTHY, "Position läuft fort")
             self._normalize_warning_if_healthy()
@@ -177,6 +229,17 @@ class DeckHealthMonitor:
             )
         if progress.suspected_at is None:
             progress.suspected_at = now
+            progress.stall_logged_at = now
+            self._logger.warning(
+                "audio.stall_suspected deck=%s stalled_seconds=%.3f position=%.3f "
+                "backend_state=%s network_source=%s context=%s",
+                deck_id,
+                stalled_for,
+                deck.model.position,
+                backend_state,
+                network,
+                self._diagnostic_context(deck_id),
+            )
             self._state.set_deck_health(deck_id, DeckHealth.SUSPECTED_STALL, reason)
             self._raise_warning(reason)
             return DeckHealthObservation(
@@ -206,6 +269,7 @@ class DeckHealthMonitor:
         progress.position = position
         progress.last_progress_at = now
         progress.suspected_at = None
+        progress.stall_logged_at = None
 
     def _health(self, deck_id: str) -> DeckHealth:
         snapshot = self._state.snapshot()
