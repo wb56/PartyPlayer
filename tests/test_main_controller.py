@@ -2054,7 +2054,7 @@ def test_diagnostic_report_is_saved_with_context_and_without_file_paths(tmp_path
 
     assert report_path.name.startswith("deckrelay-diagnostic-")
     assert report.startswith("DeckRelay diagnostic report")
-    assert "Version: 1.0.0-beta.2" in report
+    assert "Version: 1.0.0-beta.3" in report
     assert "Test context: normal_playback" in report
     assert "Operating mode:" in report
     assert "status_tick.total:" in report

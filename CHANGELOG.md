@@ -4,6 +4,8 @@ Alle wesentlichen Änderungen an DeckRelay werden in dieser Datei dokumentiert.
 
 ## [Unveröffentlicht]
 
+## [1.0.0-beta.3] - 2026-08-15
+
 ### Fixed
 
 - Beim erstmaligen Öffnen der Jingle- und Effektverwaltung wird ein neues Overlay
@@ -17,7 +19,7 @@ Alle wesentlichen Änderungen an DeckRelay werden in dieser Datei dokumentiert.
   gemeinsame SQLite-Verbindung. Dadurch entfallen Verbindungsaufbau und
   -abbau pro Titel, die den GUI-Thread bei größeren Queues mehrere Sekunden
   blockieren konnten.
-- Die Beta-2-Windows-EXE enthält nun eine konsistente Datei- und Produktversion;
+- Die Beta-3-Windows-EXE enthält eine konsistente Datei- und Produktversion;
   das irrtümlich weitergeführte portable Beta-1-Paket wurde entfernt.
 - Ein nicht bestätigter Wiedergabestart des eingehenden Decks wird nicht mehr
   fälschlich als dauerhafter Deck- oder Backendausfall behandelt. Der betroffene
@@ -67,6 +69,8 @@ Alle wesentlichen Änderungen an DeckRelay werden in dieser Datei dokumentiert.
 
 ### Added
 
+- Die portable Windows-Laufzeit bündelt die benötigten Tcl/Tk-Dateien und setzt
+  deren Pfade beim Start über einen eigenen Runtime-Hook.
 - Der Messpunkt `automatic_start.summary` erfasst die vollständige Dauer der
   Automatikvorschau und warnt ab 50 ms.
 - Ein Windows-GitHub-Actions-Workflow führt Ruff, Black, MyPy und die vollständige

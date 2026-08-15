@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "party-player"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 description = "DeckRelay – Automatic Two-Deck Music Player"
 readme = "README.md"
 license = "GPL-3.0-or-later"
