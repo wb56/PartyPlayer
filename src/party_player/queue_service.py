@@ -781,6 +781,26 @@ class QueueService:
         """Evaluate stable business rules for a start preview without mutating the queue."""
         return self._selection_service.evaluate(entry, self._tracks.get_active(entry.track_id))
 
+    def preview_candidate_decisions(
+        self,
+        entries: list[QueueEntry],
+    ) -> dict[int, tuple[Track | None, SelectionDecision]]:
+        """Evaluate a complete start preview on one shared SQLite connection."""
+
+        results: dict[int, tuple[Track | None, SelectionDecision]] = {}
+        with self._repository.transaction():
+            for entry in entries:
+                track = self._tracks.get_active(entry.track_id)
+                results[entry.queue_id] = (
+                    track,
+                    (
+                        SelectionDecision.allow()
+                        if entry.status is QueueStatus.READY
+                        else self._selection_service.evaluate(entry, track)
+                    ),
+                )
+        return results
+
     def revalidate_candidate(
         self,
         queue_id: int,

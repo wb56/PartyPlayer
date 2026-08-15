@@ -869,4 +869,5 @@ class PartyPlayerRepository:
             preparation_attempts=int(row["preparation_attempts"]),
             failure_code=row["failure_code"],
             skip_code=row["skip_code"],
+            source_detail=str(row["source"]),
         )

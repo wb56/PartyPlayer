@@ -38,7 +38,7 @@ class OverlayDefinition:
     cue_in_ms: int = 0
     cue_out_ms: int | None = None
     ducking_enabled: bool = True
-    ducking_db: float = -8.0
+    ducking_db: float = 0.0
     ducking_attack_ms: int = 200
     ducking_release_ms: int = 500
 

@@ -118,5 +118,14 @@ class FakeAudioBackend:
     def is_finished(self) -> bool:
         return self.finished
 
+    def playback_state(self) -> str:
+        if self.finished:
+            return "ENDED"
+        if self.paused:
+            return "PAUSED"
+        if self.playing:
+            return "PLAYING"
+        return "STOPPED"
+
     def close(self) -> None:
         self.stop()

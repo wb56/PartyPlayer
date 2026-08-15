@@ -14,6 +14,10 @@ def definition(path: str = "jingle.mp3") -> OverlayDefinition:
     return OverlayDefinition(1, "Begrüßung", path)
 
 
+def test_new_overlay_does_not_lower_music_by_default() -> None:
+    assert definition().ducking_db == 0.0
+
+
 def test_resolve_overlay_applies_defaults_and_cue_bounds() -> None:
     resolved = resolve_overlay(definition(), duration_ms=8_000, require_file=False)
 

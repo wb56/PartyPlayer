@@ -51,6 +51,7 @@ class Deck:
     equalizer_band_count: int = 0
     equalizer_applied: bool = False
     equalizer_error: str = ""
+    backend_state: str = "UNKNOWN"
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +80,7 @@ class QueueEntry:
     preparation_attempts: int = 0
     failure_code: str | None = None
     skip_code: str | None = None
+    source_detail: str = ""
 
     @property
     def has_cue_overrides(self) -> bool:
