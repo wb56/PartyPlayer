@@ -20,7 +20,7 @@ Die Datenbank wird beim ersten Start unter `data/party_player.db` angelegt.
 
 ## Projektstatus
 
-DeckRelay befindet sich mit `v1.0.0-beta.2` in der öffentlichen Beta-Abnahme.
+DeckRelay befindet sich mit `v1.0.0-beta.3` in der öffentlichen Beta-Abnahme.
 Reale Audio-, Geräte-, NAS-, Skalierungs- und Langzeittests sind weiterhin erforderlich.
 
 - Quellcode und kostenlose Windows-Beta-Releases sind öffentlich verfügbar.
