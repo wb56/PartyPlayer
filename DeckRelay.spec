@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 from PyInstaller.utils.win32.versioninfo import (
     FixedFileInfo,
     StringFileInfo,
@@ -61,14 +61,25 @@ version_info = VSVersionInfo(
     ],
 )
 
-datas = collect_data_files("customtkinter")
+python_root = Path(sys.base_prefix)
+tcl_root = python_root / "tcl"
+datas = collect_data_files("customtkinter") + [
+    (str(tcl_root / "tcl8.6"), "_tcl_data"),
+    (str(tcl_root / "tk8.6"), "_tk_data"),
+]
+tk_binaries = [
+    (str(python_root / "DLLs" / "tcl86t.dll"), "."),
+    (str(python_root / "DLLs" / "tk86t.dll"), "."),
+]
 
 a = Analysis(
     [str(project_dir / "src" / "party_player" / "__main__.py")],
     pathex=[str(project_dir / "src")],
-    binaries=[],
+    binaries=tk_binaries,
     datas=datas,
-    hiddenimports=["vlc"],
+    hiddenimports=["vlc", "_tkinter", *collect_submodules("tkinter")],
+    hookspath=[str(project_dir / "hooks")],
+    runtime_hooks=[str(project_dir / "scripts" / "pyi_rth_deckrelay_tkinter.py")],
 )
 # The python-vlc PyInstaller hook may discover a locally installed VLC runtime.
 # DeckRelay intentionally ships only the Python binding and requires an external
