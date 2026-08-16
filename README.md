@@ -12,7 +12,8 @@ It is designed for private parties, small events, clubs, associations, and anyon
 > DeckRelay 1.0.0 is the first stable release. It is available as a portable Windows application and does not require a traditional installation.
 
 
-<img width="1470" height="798" alt="grafik" src="https://github.com/user-attachments/assets/dc4af99d-54df-44b9-877b-8349e5f8c55b" />
+<img width="1472" height="807" alt="grafik" src="https://github.com/user-attachments/assets/4c4bd92b-d479-46c7-8ad7-71ec432e098f" />
+
 
 
 ## What DeckRelay offers
