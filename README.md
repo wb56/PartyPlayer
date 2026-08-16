@@ -6,11 +6,11 @@ DeckRelay is a free, open-source Windows application for organizing music collec
 
 It is designed for private parties, small events, clubs, associations, and anyone who wants more control than a simple playlist player provides—without requiring a full professional DJ system.
 
-[Download DeckRelay 1.0.0](https://github.com/wb56/deckrelay/releases/tag/v1.0.0) · [View documentation](#getting-started) · [Report a problem](https://github.com/wb56/deckrelay/issues)
+[Download DeckRelay 1.0.0 for Windows](https://github.com/wb56/deckrelay/releases/download/v1.0.0/DeckRelay-portable-1.0.0.zip) ·[Release notes](https://github.com/wb56/deckrelay/releases/tag/v1.0.0) ·
+[SHA-256 checksums](https://github.com/wb56/deckrelay/releases/download/v1.0.0/SHA256SUMS.txt) · [View documentation](#getting-started) · [Report a problem](https://github.com/wb56/deckrelay/issues)
 
 > DeckRelay 1.0.0 is the first stable release. It is available as a portable Windows application and does not require a traditional installation.
 
-<!-- Replace this line with a current screenshot -->
 
 <img width="1470" height="798" alt="grafik" src="https://github.com/user-attachments/assets/dc4af99d-54df-44b9-877b-8349e5f8c55b" />
 
@@ -52,6 +52,10 @@ DeckRelay is not intended to replace performance-oriented DJ software. Its focus
 
 ## Getting started
 
+Before starting DeckRelay, make sure that VLC is installed. FFmpeg and
+FFprobe are additionally required if you want DeckRelay to analyze new
+audio files.
+
 1. Download `DeckRelay-portable-1.0.0.zip` from the [latest release](https://github.com/wb56/deckrelay/releases/latest).
 2. Extract the complete ZIP archive into a folder of your choice.
 3. Start `DeckRelay.exe`.
@@ -68,6 +72,8 @@ No separate installation is required. Do not start DeckRelay directly from withi
 * 64-bit system
 * local MP3 and FLAC files
 * sufficient free disk space for the catalog and application data
+* VLC media player with libVLC for audio playback
+* FFmpeg and FFprobe for cue and loudness analysis
 
 ## Stable release
 
