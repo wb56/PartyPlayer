@@ -77,6 +77,31 @@ from party_player.overlay_service import OverlayCatalogSnapshot, OverlayService
 from party_player.controllers.overlay_controller import OverlayController
 from party_player.ui.dirty_row_scheduler import DirtyRowScheduler, RenderBatchStatistics
 from party_player.performance_monitor import PerformanceMonitor
+from party_player.presentation import (
+    GlobalStatusState,
+    LayoutDecision,
+    LayoutPolicy,
+    LogicalClientSize,
+    PresentationPreference,
+    PresentationState,
+    ResolvedPresentation,
+    Workspace,
+    force_live_for_operational_update,
+    global_status_text,
+    logical_client_size,
+)
+from party_player.presentation_coordinator import MainWindowPresentationCoordinator
+from party_player.window_geometry import (
+    DisplayProvider,
+    DisplaySnapshot,
+    MonitorGeometry,
+    Rect,
+    ResolvedWindowGeometry,
+    StoredWindowGeometry,
+    WindowsDisplayProvider,
+    parse_tk_geometry,
+    resolve_window_geometry,
+)
 from party_player.capability_snapshots import CapabilitySnapshotState
 from party_player.backup_restore_controller import (
     BackupRestoreController,
@@ -874,10 +899,30 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self,
         performance_monitor: PerformanceMonitor | None = None,
         callback_state: GuiCallbackState | None = None,
+        *,
+        saved_geometry: str | None = None,
+        save_geometry: Callable[[str], None] | None = None,
+        display_provider: DisplayProvider | None = None,
+        presentation_preference: PresentationPreference = PresentationPreference.AUTO,
+        presentation_workspace: Workspace = Workspace.LIVE,
+        save_presentation_preference: Callable[[PresentationPreference], None] | None = None,
+        save_presentation_workspace: Callable[[Workspace], None] | None = None,
     ) -> None:
         super().__init__()
         self._performance = performance_monitor or PerformanceMonitor()
         self._callback_state = callback_state or GuiCallbackState()
+        self._logger = logging.getLogger(__name__)
+        self._display_provider = display_provider
+        self._save_window_geometry = save_geometry
+        self._display_fingerprint: tuple[object, ...] | None = None
+        self._window_geometry_after_id: str | None = None
+        self._save_presentation_preference = save_presentation_preference
+        self._save_presentation_workspace = save_presentation_workspace
+        self._presentation_initial_preference = presentation_preference
+        self._presentation_initial_workspace = presentation_workspace
+        self._presentation_coordinator: MainWindowPresentationCoordinator | None = None
+        self._presentation_startup_guard = True
+        self._presentation_status = GlobalStatusState()
         self._controller: MainController | None = None
         self._system_diagnostic_report: SystemDiagnosticReport | None = None
         self._system_diagnostic_check: Callable[[], SystemDiagnosticReport] | None = None
@@ -1021,8 +1066,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             split_creation_and_bind=True,
         )
         self.title(f"DeckRelay {__version__}")
-        self.geometry("1500x950")
-        self.minsize(1180, 800)
+        self._apply_initial_window_geometry(saved_geometry)
         ctk.set_appearance_mode("dark")
         self.protocol("WM_DELETE_WINDOW", self._request_close)
         self._bind_gui("<F11>", "fullscreen", lambda _event: self._toggle_fullscreen())
@@ -1110,8 +1154,50 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             hover_color="#b52a2a",
             command=self._request_close,
         ).pack(side="left", padx=2)
-        self._session_summary = ctk.CTkLabel(self, text="Session: —", text_color="#aaaaaa")
-        self._session_summary.grid(row=0, column=1, padx=12, pady=(14, 8))
+        presentation_header = ctk.CTkFrame(self, fg_color="transparent")
+        presentation_header.grid(row=0, column=1, padx=8, pady=(6, 3), sticky="ew")
+        presentation_header.grid_columnconfigure(0, weight=1)
+        self._session_summary = ctk.CTkLabel(
+            presentation_header, text="Session: —", text_color="#aaaaaa"
+        )
+        self._session_summary.grid(row=0, column=0, columnspan=4, sticky="ew")
+        workspace_controls = ctk.CTkFrame(presentation_header, fg_color="transparent")
+        workspace_controls.grid(row=1, column=0, columnspan=4)
+        self._workspace_live_button = ctk.CTkButton(
+            workspace_controls,
+            text="LIVE",
+            width=72,
+            height=25,
+            command=lambda: self._select_workspace(Workspace.LIVE),
+        )
+        self._workspace_live_button.pack(side="left", padx=3)
+        self._workspace_preparation_button = ctk.CTkButton(
+            workspace_controls,
+            text="VORBEREITUNG",
+            width=112,
+            height=25,
+            command=lambda: self._select_workspace(Workspace.PREPARATION),
+        )
+        self._workspace_preparation_button.pack(side="left", padx=3)
+        self._presentation_mode_button = ctk.CTkButton(
+            workspace_controls,
+            text="Ansicht: AUTO ▾",
+            width=110,
+            height=25,
+            fg_color=theme.SURFACE_RAISED,
+            command=self._show_presentation_menu,
+        )
+        self._presentation_mode_button.pack(side="left", padx=3)
+        self._global_status_label = ctk.CTkLabel(
+            presentation_header,
+            text="A LEER · B LEER · Quelle — · Automatik bereit",
+            text_color=theme.TEXT_MUTED,
+            font=(theme.FONT_FAMILY, 11),
+            wraplength=720,
+        )
+        self._global_status_label.grid(
+            row=2, column=0, columnspan=4, padx=3, pady=(1, 0), sticky="ew"
+        )
 
         self.deck_a = DeckPanel(self, "A", self._deck_action, self._performance)
         self.deck_a.grid(row=1, column=0, padx=(16, 8), pady=8, sticky="nsew")
@@ -2030,7 +2116,182 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         ).grid(row=5, column=0, columnspan=3, padx=12, pady=(5, 10), sticky="w")
         self._mixer_panel.grid_remove()
         self._bind_gui("<Configure>", "responsive_layout", self._window_resized)
+        initial_state = PresentationState(
+            preference=self._presentation_initial_preference,
+            workspace=self._presentation_initial_workspace,
+        )
+        self._presentation_coordinator = MainWindowPresentationCoordinator(
+            initial_state,
+            LayoutPolicy(),
+            self.schedule,
+            self._apply_presentation_state,
+            self._presentation_interaction_active,
+        )
+        self._bind_gui(
+            "<FocusIn>",
+            "presentation_interaction_end",
+            lambda _event: (
+                self._presentation_coordinator.interaction_ended()
+                if self._presentation_coordinator is not None
+                else None
+            ),
+        )
+        self._presentation_coordinator.reevaluate(
+            self._logical_client_size(self.winfo_width(), self.winfo_height()),
+            reason="startup",
+        )
+        self.schedule(2000, self._finish_presentation_startup)
+        self.schedule(2000, self._poll_display_environment)
         self._request_focus_setup(self)
+
+    def _display_snapshot(self) -> DisplaySnapshot:
+        if self._display_provider is not None:
+            return self._display_provider.snapshot(self.winfo_id())
+        if sys.platform.startswith("win"):
+            return WindowsDisplayProvider().snapshot(self.winfo_id())
+        return DisplaySnapshot(
+            (
+                MonitorGeometry(
+                    Rect(0, 0, self.winfo_screenwidth(), self.winfo_screenheight()),
+                    Rect(0, 0, self.winfo_screenwidth(), self.winfo_screenheight()),
+                    1.0,
+                    True,
+                ),
+            )
+        )
+
+    def _logical_client_size(self, width: int, height: int) -> LogicalClientSize:
+        return logical_client_size(width, height, self._get_window_scaling())
+
+    @staticmethod
+    def _snapshot_fingerprint(snapshot: DisplaySnapshot) -> tuple[object, ...]:
+        return tuple(
+            (monitor.bounds, monitor.work_area, round(monitor.dpi_scale, 4), monitor.primary)
+            for monitor in snapshot.monitors
+        ) + (snapshot.insets,)
+
+    def _apply_initial_window_geometry(self, saved_geometry: str | None) -> None:
+        snapshot = self._display_snapshot()
+        resolved = resolve_window_geometry(saved_geometry, snapshot)
+        self.minsize(resolved.minimum_width, resolved.minimum_height)
+        self.geometry(resolved.tk_geometry)
+        self._display_fingerprint = self._snapshot_fingerprint(snapshot)
+        self._log_window_geometry("startup", saved_geometry, snapshot, resolved)
+
+    def _current_stored_geometry(self, snapshot: DisplaySnapshot) -> StoredWindowGeometry | None:
+        current = parse_tk_geometry(self.geometry(), 1.0)
+        if current is None:
+            return None
+        monitor = max(
+            snapshot.monitors,
+            key=lambda item: item.bounds.intersection_area(
+                Rect(
+                    current.x,
+                    current.y,
+                    current.x + round(current.width * item.dpi_scale) + snapshot.insets.horizontal,
+                    current.y + round(current.height * item.dpi_scale) + snapshot.insets.vertical,
+                )
+            ),
+        )
+        return StoredWindowGeometry(
+            current.width,
+            current.height,
+            current.x,
+            current.y,
+            monitor.dpi_scale,
+        )
+
+    def _ensure_window_in_work_area(self, trigger: str) -> None:
+        if bool(self.attributes("-fullscreen")):
+            return
+        try:
+            snapshot = self._display_snapshot()
+        except OSError:
+            self._logger.exception("Fensterarbeitsfläche konnte nicht aktualisiert werden")
+            return
+        current = self._current_stored_geometry(snapshot)
+        if current is None:
+            return
+        resolved = resolve_window_geometry(current.serialize(), snapshot)
+        self._display_fingerprint = self._snapshot_fingerprint(snapshot)
+        if resolved.reasons:
+            self.minsize(resolved.minimum_width, resolved.minimum_height)
+            self.geometry(resolved.tk_geometry)
+            self._log_window_geometry(trigger, current.serialize(), snapshot, resolved)
+
+    def _poll_display_environment(self) -> None:
+        try:
+            snapshot = self._display_snapshot()
+        except OSError:
+            self._logger.exception("Fensterarbeitsfläche konnte nicht abgefragt werden")
+        else:
+            fingerprint = self._snapshot_fingerprint(snapshot)
+            if fingerprint != self._display_fingerprint:
+                self._ensure_window_in_work_area("display_change")
+                if self._presentation_coordinator is not None:
+                    self._presentation_coordinator.reevaluate(
+                        self._logical_client_size(self.winfo_width(), self.winfo_height()),
+                        reason="display-change",
+                    )
+        self.schedule(2000, self._poll_display_environment)
+
+    def _schedule_window_geometry_save(self) -> None:
+        if self._save_window_geometry is None:
+            return
+        pending = self._window_geometry_after_id
+        if pending is not None:
+            try:
+                self.after_cancel(pending)
+            except TclError:
+                pass
+            self._scheduled_after_ids.discard(pending)
+
+        def save() -> None:
+            self._window_geometry_after_id = None
+            self._ensure_window_in_work_area("configure")
+            self._persist_window_geometry()
+
+        self._window_geometry_after_id = str(self.schedule(400, save))
+
+    def _persist_window_geometry(self) -> None:
+        if self._save_window_geometry is None or bool(self.attributes("-fullscreen")):
+            return
+        try:
+            snapshot = self._display_snapshot()
+            geometry = self._current_stored_geometry(snapshot)
+        except OSError:
+            return
+        if geometry is not None:
+            self._save_window_geometry(geometry.serialize())
+
+    def _log_window_geometry(
+        self,
+        trigger: str,
+        stored: str | None,
+        snapshot: DisplaySnapshot,
+        resolved: ResolvedWindowGeometry,
+    ) -> None:
+        self._logger.info(
+            "Fenstergeometrie trigger=%s monitors=%s stored=%s applied=%s reasons=%s",
+            trigger,
+            [
+                {
+                    "bounds": (m.bounds.left, m.bounds.top, m.bounds.right, m.bounds.bottom),
+                    "work": (
+                        m.work_area.left,
+                        m.work_area.top,
+                        m.work_area.right,
+                        m.work_area.bottom,
+                    ),
+                    "dpi_scale": round(m.dpi_scale, 3),
+                    "primary": m.primary,
+                }
+                for m in snapshot.monitors
+            ],
+            stored,
+            resolved.tk_geometry,
+            resolved.reasons or ("unchanged",),
+        )
 
     def bind_controller(self, controller: MainController) -> None:
         self._controller = controller
@@ -3448,6 +3709,8 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._session_summary.configure(
             text=f"Session: {session.name} · {statuses.get(session.status.value, session.status.value)}"
         )
+        if session.status.value in {"recovered", "paused"}:
+            self._force_live_workspace(f"session-{session.status.value}")
 
     def show_start_settings(self, restore_session: bool, fullscreen: bool) -> None:
         (
@@ -3537,6 +3800,11 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             children = root.winfo_children()
             return len(children) + sum(count_widgets(child) for child in children)
 
+        presentation = (
+            self._presentation_coordinator.diagnostics()
+            if self._presentation_coordinator is not None
+            else None
+        )
         return {
             "catalog_row_views": len(self._catalog_rows),
             "queue_row_views": len(self._queue_rows),
@@ -3568,6 +3836,21 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             "overlay.generation": self._overlay_runtime.generation,
             "overlay.position_ms": self._overlay_runtime.position_ms or 0,
             "overlay.ducking_active": int(self._overlay_ducking_factor < 0.999),
+            "presentation.client_width": presentation.client_size.width if presentation else 0,
+            "presentation.client_height": presentation.client_size.height if presentation else 0,
+            "presentation.resize_events": presentation.resize_events if presentation else 0,
+            "presentation.evaluations": presentation.evaluations if presentation else 0,
+            "presentation.applied_changes": presentation.applied_changes if presentation else 0,
+            "presentation.resolved_compact": int(
+                presentation is not None
+                and presentation.state.resolved is ResolvedPresentation.COMPACT
+            ),
+            "presentation.workspace_preparation": int(
+                presentation is not None and presentation.state.workspace is Workspace.PREPARATION
+            ),
+            "presentation.pending_switch": int(
+                presentation is not None and presentation.state.pending_mode is not None
+            ),
             **self._render_counters,
         }
 
@@ -3616,6 +3899,12 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._audio_device_retry_button.configure(state="normal" if lost else "disabled")
         self._audio_device_confirm_button.configure(state="normal" if ready else "disabled")
         self._audio_device_menu.configure(state="disabled" if lost or ready else "normal")
+        self._presentation_status = replace(
+            self._presentation_status, warning=message if lost or ready else ""
+        )
+        self._render_global_status()
+        if lost or ready:
+            self._force_live_workspace(f"audio-recovery-{state}")
 
     def show_recovery_return_requirements(
         self, requirements: tuple[RecoveryReturnRequirement, ...], visible: bool
@@ -3662,6 +3951,11 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._unresolved_incident_title.configure(text=f"⚠ UNGELÖSTER AUDIOVORFALL #{incident_id}")
         self._unresolved_incident_summary.configure(text=summary)
         self._unresolved_incident_frame.grid()
+        self._presentation_status = replace(
+            self._presentation_status, warning=f"Audiovorfall #{incident_id}"
+        )
+        self._render_global_status()
+        self._force_live_workspace("unresolved-emergency")
 
     def show_emergency_dashboard(self, dashboard: EmergencyDashboardViewModel) -> None:
         """Render cached emergency readiness without initiating any storage checks."""
@@ -3756,6 +4050,8 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
 
     def hide_unresolved_emergency_incident(self) -> None:
         self._unresolved_incident_frame.grid_remove()
+        self._presentation_status = replace(self._presentation_status, warning="")
+        self._render_global_status()
 
     def _review_unresolved_incident(self) -> None:
         if self._controller is None:
@@ -3794,6 +4090,11 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         if event.widget is not self:
             return
         self._schedule_cursor_restore()
+        self._schedule_window_geometry_save()
+        if self._presentation_coordinator is not None:
+            self._presentation_coordinator.resize(
+                self._logical_client_size(event.width, event.height), reason="configure"
+            )
         if self._responsive_layout_pending:
             return
         self._responsive_layout_pending = True
@@ -3815,6 +4116,131 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             self._overlay_panel.relayout(max(0, self.winfo_width() - (outer * 2)))
 
         self.schedule(80, apply)
+
+    def _presentation_interaction_active(self) -> bool:
+        """Guard future destructive layout switches during active modal interaction."""
+        try:
+            return self.grab_current() is not None
+        except TclError:
+            return False
+
+    def _show_presentation_menu(self) -> None:
+        menu = tk.Menu(self, tearoff=False)
+        for preference, label in (
+            (PresentationPreference.AUTO, "Automatisch"),
+            (PresentationPreference.LARGE, "Groß"),
+            (PresentationPreference.COMPACT, "Kompakt"),
+        ):
+            menu.add_command(
+                label=label,
+                command=partial(self._select_presentation_preference, preference),
+            )
+        self._post_button_menu(menu, self._presentation_mode_button)
+
+    def _select_presentation_preference(self, preference: PresentationPreference) -> None:
+        coordinator = self._presentation_coordinator
+        if coordinator is None:
+            return
+        coordinator.set_preference(preference)
+        if self._save_presentation_preference is not None:
+            self._save_presentation_preference(preference)
+        self._refresh_presentation_header(coordinator.state)
+
+    def _select_workspace(self, selected: Workspace) -> None:
+        coordinator = self._presentation_coordinator
+        if coordinator is None or not coordinator.set_workspace(selected):
+            return
+        if self._save_presentation_workspace is not None:
+            self._save_presentation_workspace(selected)
+
+    def _force_live_workspace(self, reason: str) -> None:
+        coordinator = self._presentation_coordinator
+        if coordinator is not None and coordinator.set_workspace(Workspace.LIVE, reason=reason):
+            if self._save_presentation_workspace is not None:
+                self._save_presentation_workspace(Workspace.LIVE)
+
+    def _finish_presentation_startup(self) -> None:
+        """Allow manual workspace choice after initial controller state has rendered."""
+        self._presentation_startup_guard = False
+        coordinator = self._presentation_coordinator
+        if coordinator is None:
+            return
+        diagnostic = coordinator.diagnostics()
+        thresholds = LayoutPolicy().thresholds
+        self._logger.info(
+            "Präsentationsdiagnose client_logical=%sx%s preference=%s resolved=%s "
+            "workspace=%s reason=%s resize_events=%s evaluations=%s applied_changes=%s "
+            "large_min=%sx%s hysteresis=%sx%s pending=%s",
+            diagnostic.client_size.width,
+            diagnostic.client_size.height,
+            diagnostic.state.preference.value,
+            diagnostic.state.resolved.value,
+            diagnostic.state.workspace.value,
+            diagnostic.state.last_reason,
+            diagnostic.resize_events,
+            diagnostic.evaluations,
+            diagnostic.applied_changes,
+            thresholds.large_min_width,
+            thresholds.large_min_height,
+            thresholds.width_hysteresis,
+            thresholds.height_hysteresis,
+            diagnostic.state.pending_reason,
+        )
+
+    def _apply_presentation_state(self, state: PresentationState, decision: LayoutDecision) -> None:
+        """Apply only Phase 2B-1 focus/status changes; never rebuild main content."""
+        self._refresh_presentation_header(state)
+        self._focus_workspace(state.workspace)
+        capabilities = decision.capabilities
+        client_size = self._logical_client_size(self.winfo_width(), self.winfo_height())
+        self._logger.info(
+            "Präsentation preference=%s resolved=%s workspace=%s client=%sx%s "
+            "large_fits=%s compact_fits=%s reason=%s pending=%s compact_content=%s",
+            state.preference.value,
+            state.resolved.value,
+            state.workspace.value,
+            client_size.width,
+            client_size.height,
+            capabilities.large_fits,
+            capabilities.compact_fits,
+            state.last_reason,
+            state.pending_reason,
+            state.compact_content_available,
+        )
+
+    def _focus_workspace(self, selected: Workspace) -> None:
+        """Move keyboard focus without changing selection or domain state."""
+        target = self._automatic_queue_button if selected is Workspace.LIVE else self._search
+        target.focus_set()
+
+    def _refresh_presentation_header(self, state: PresentationState) -> None:
+        live_selected = state.workspace is Workspace.LIVE
+        self._workspace_live_button.configure(
+            fg_color="#1f6aa5" if live_selected else theme.SURFACE_RAISED
+        )
+        self._workspace_preparation_button.configure(
+            fg_color="#1f6aa5" if not live_selected else theme.SURFACE_RAISED
+        )
+        mode_text = {
+            PresentationPreference.AUTO: "AUTO",
+            PresentationPreference.LARGE: "GROSS",
+            PresentationPreference.COMPACT: "KOMPAKT",
+        }[state.preference]
+        resolved_note = ""
+        if state.resolved is ResolvedPresentation.COMPACT:
+            resolved_note = " · KOMPAKT (Inhalte ab 2B-2)"
+        self._presentation_mode_button.configure(text=f"Ansicht: {mode_text} ▾")
+        self._render_global_status(resolved_note)
+
+    def _render_global_status(self, resolved_note: str = "") -> None:
+        if not resolved_note and self._presentation_coordinator is not None:
+            if self._presentation_coordinator.state.resolved is ResolvedPresentation.COMPACT:
+                resolved_note = " · KOMPAKT (Inhalte ab 2B-2)"
+        status = self._presentation_status
+        self._global_status_label.configure(
+            text=global_status_text(status, resolved_note),
+            text_color=theme.WARNING if status.warning else theme.TEXT_MUTED,
+        )
 
     def _schedule_cursor_restore(self) -> None:
         """Restore the pointer after Windows leaves its native move/resize loop."""
@@ -4768,6 +5194,8 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
 
     def show_queue_origin(self, text: str) -> None:
         self._queue_source_button.configure(text=f"Quelle: {text} ▾")
+        self._presentation_status = replace(self._presentation_status, source=text)
+        self._render_global_status()
 
     def show_deck(self, deck: Deck) -> None:
         (self.deck_a if deck.deck_id == "A" else self.deck_b).render(deck)
@@ -4781,6 +5209,16 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         else:
             status_text = "Keine Titel geladen"
             status_color = theme.TEXT_MUTED
+        self._presentation_status = replace(
+            self._presentation_status,
+            **{f"deck_{deck.deck_id.casefold()}": status_text.upper()},
+        )
+        self._render_global_status()
+        if force_live_for_operational_update(
+            startup_guard=self._presentation_startup_guard,
+            active=deck.is_on_air,
+        ):
+            self._force_live_workspace("active-playback")
         deck_status = (f"DECK {deck.deck_id}\n{status_text}", status_color)
         if self._deck_status_cache.get(deck.deck_id) != deck_status:
             self._deck_status_labels[deck.deck_id].configure(
@@ -4901,6 +5339,11 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             text="■" if active else "▶",
             fg_color="#8f1f1f" if active else "#1f6aa5",
         )
+        if force_live_for_operational_update(
+            startup_guard=self._presentation_startup_guard,
+            active=active,
+        ):
+            self._force_live_workspace("active-automation")
 
     def show_automatic_status(self, state: str, detail: str = "") -> None:
         labels = {
@@ -4912,9 +5355,16 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             "completed": ("Automatik abgeschlossen", theme.SUCCESS),
         }
         text, color = labels.get(state, ("Automatik bereit", theme.TEXT_MUTED))
+        self._presentation_status = replace(self._presentation_status, automatic=text)
+        self._render_global_status()
         if detail:
             text = f"{text} · {detail}"
         self._automatic_status_label.configure(text=text, text_color=color)
+        if force_live_for_operational_update(
+            startup_guard=self._presentation_startup_guard,
+            active=state in {"running", "transition", "paused", "stopped"},
+        ):
+            self._force_live_workspace(f"automatic-{state}")
 
     def show_queue_duplicate_policy(self, policy: str) -> None:
         if policy == "allow":
@@ -5069,6 +5519,9 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         show_silent_message(self, "Queue mischen", message)
 
     def show_error(self, title: str, message: str) -> None:
+        self._presentation_status = replace(self._presentation_status, warning=title)
+        self._render_global_status()
+        self._force_live_workspace("error")
         show_silent_message(self, title, message, error=True)
 
     def show_queue_warning(self, message: str) -> None:
@@ -6098,6 +6551,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
 
     def _request_close(self) -> None:
         if self._controller is None:
+            self._persist_window_geometry()
             self.destroy()
             return
         audio_note = (
@@ -6116,6 +6570,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         if choice is None:
             return
         self._controller.close(finish_session=choice)
+        self._persist_window_geometry()
         self._dispose_resources()
         self.destroy()
 

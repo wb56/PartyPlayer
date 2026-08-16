@@ -278,7 +278,16 @@ class PartyPlayerApplication:
         worker_registry = WorkerRegistry(enabled=performance_settings.enabled)
 
         callback_state = GuiCallbackState()
-        window = MainWindow(performance_monitor, callback_state)
+        window = MainWindow(
+            performance_monitor,
+            callback_state,
+            saved_geometry=settings.main_window_geometry(),
+            save_geometry=settings.set_main_window_geometry,
+            presentation_preference=settings.presentation_preference(),
+            presentation_workspace=settings.presentation_workspace(),
+            save_presentation_preference=settings.set_presentation_preference,
+            save_presentation_workspace=settings.set_presentation_workspace,
+        )
         if pending_setup_reason is not None or (
             startup_decision is not None and startup_decision.requires_setup
         ):

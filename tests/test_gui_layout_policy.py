@@ -8,6 +8,7 @@ from party_player.ui.main_window import (
     _queue_model_count,
     _queue_pool_size,
 )
+from party_player.presentation import Workspace
 
 
 class Disposable:
@@ -37,6 +38,14 @@ class SplitControllerDouble:
 
     def set_workspace_catalog_ratio(self, ratio: float) -> None:
         self.saved.append(ratio)
+
+
+class FocusDouble:
+    def __init__(self) -> None:
+        self.focus_count = 0
+
+    def focus_set(self) -> None:
+        self.focus_count += 1
 
 
 def test_initial_catalog_pool_is_bounded_and_reuses_existing_rows() -> None:
@@ -112,6 +121,22 @@ def test_workspace_split_keeps_both_lists_visible_and_persists_choice() -> None:
     window._set_workspace_split(1.0, persist=False)
     assert window._workspace_catalog_ratio == 0.8
     assert controller.saved == [0.8]
+
+
+def test_workspace_focus_moves_to_live_action_or_preparation_search() -> None:
+    window = object.__new__(MainWindow)
+    live = FocusDouble()
+    search = FocusDouble()
+    window._automatic_queue_button = live
+    window._search = search
+
+    window._focus_workspace(Workspace.LIVE)
+    assert live.focus_count == 1
+    assert search.focus_count == 0
+
+    window._focus_workspace(Workspace.PREPARATION)
+    assert live.focus_count == 1
+    assert search.focus_count == 1
 
 
 def test_queue_dispose_counts_destroyed_widgets_once() -> None:
