@@ -9,7 +9,9 @@ import re
 MINIMUM_VLC_VERSION = "3.0"
 MINIMUM_FFMPEG_VERSION = "4.4"
 VLC_DOWNLOAD_URL = "https://www.videolan.org/vlc/"
-FFMPEG_DOWNLOAD_URL = "https://ffmpeg.org/download.html"
+# FFmpeg publishes source code itself and links this provider for ready-to-use
+# Windows binaries from its official download page.
+FFMPEG_DOWNLOAD_URL = "https://www.gyan.dev/ffmpeg/builds/"
 DEPENDENCY_PROBE_TIMEOUT_SECONDS = 5.0
 DEPENDENCY_MAXIMUM_OUTPUT_BYTES = 64 * 1024
 VLC_STANDARD_DIRECTORIES = (

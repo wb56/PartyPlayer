@@ -35,5 +35,17 @@ jobs:
       - name: MyPy
         run: python -m mypy src/party_player
 
+      - name: Install FFmpeg
+        shell: pwsh
+        run: choco install ffmpeg --yes --no-progress
+
+      - name: Verify FFmpeg and real format tests
+        shell: pwsh
+        run: |
+          Get-Command ffmpeg -ErrorAction Stop
+          Get-Command ffprobe -ErrorAction Stop
+          python -m pytest -q tests/test_ffmpeg_format_integration.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Pytest
         run: python -m pytest -q

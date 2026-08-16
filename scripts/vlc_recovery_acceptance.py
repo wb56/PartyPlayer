@@ -68,8 +68,7 @@ def main() -> int:
         isolated_muted = deck_a.transition_muted
 
         global_results = [
-            service.recover_all_backends()
-            for _cycle in range(max(0, args.global_cycles))
+            service.recover_all_backends() for _cycle in range(max(0, args.global_cycles))
         ]
         global_passed = all(result.success for result in global_results)
         global_muted = deck_a.emergency_muted and deck_b.emergency_muted

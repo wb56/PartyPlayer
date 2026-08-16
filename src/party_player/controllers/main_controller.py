@@ -2468,7 +2468,12 @@ class MainController:
         if not self._performance_settings.enabled:
             self._view.show_error(
                 "Diagnose deaktiviert",
-                "Testszenarien sind im Produktionsbetrieb deaktiviert.",
+                (
+                    "Testszenarien sind im Produktionsbetrieb deaktiviert. "
+                    "Bitte den Produktionsmodus in den Einstellungen ausschalten und "
+                    "DeckRelay neu starten. Administratorrechte sind nicht erforderlich; "
+                    "die portable Version muss in einem beschreibbaren Ordner liegen."
+                ),
             )
             return
         if test_context not in self.DIAGNOSTIC_CONTEXTS:

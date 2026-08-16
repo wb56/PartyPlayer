@@ -303,6 +303,36 @@ def test_result_from_closed_dialog_generation_does_not_update_new_dialog(
     assert window._database_operation_generation is None
 
 
+def test_completed_backup_shows_clear_event_backup_confirmation(
+    monkeypatch, tmp_path: Path
+) -> None:
+    window = object.__new__(MainWindow)
+    shown: list[tuple[str, str, bool]] = []
+    monkeypatch.setattr(
+        main_window,
+        "show_silent_message",
+        lambda _parent, title, message, *, error=False: shown.append((title, message, error)),
+    )
+    backup = tmp_path / "deckrelay.partyplayer-backup"
+
+    window.show_backup_restore_result(
+        BackupRestoreUiResult(
+            BackupRestoreOperation.BACKUP,
+            BackupRestoreUiState.COMPLETED,
+            "Backup wurde erfolgreich erstellt.",
+            backup,
+        )
+    )
+
+    assert shown == [
+        (
+            "Sicherung erfolgreich",
+            f"Die komplette Veranstaltungssicherung wurde erfolgreich erstellt.\n\nDatei: {backup}",
+            False,
+        )
+    ]
+
+
 def test_vacuum_and_reindex_require_explicit_confirmation(monkeypatch) -> None:
     window = object.__new__(MainWindow)
     binding = BackupRestoreBindingStub()

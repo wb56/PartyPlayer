@@ -40,6 +40,10 @@ def test_only_configured_https_downloads_open_after_user_action(url: str) -> Non
     assert url.startswith("https://")
 
 
+def test_ffmpeg_download_opens_windows_builds() -> None:
+    assert FFMPEG_DOWNLOAD_URL == "https://www.gyan.dev/ffmpeg/builds/"
+
+
 def test_unconfigured_download_target_is_rejected() -> None:
     with pytest.raises(ValueError, match="Nicht erlaubtes"):
         open_official_download("https://example.invalid/tool", lambda _target: True)
