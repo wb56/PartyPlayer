@@ -4,7 +4,7 @@ Alle wesentlichen Änderungen an DeckRelay werden in dieser Datei dokumentiert.
 
 ## [Unveröffentlicht]
 
-## [1.0.0] - Veröffentlichung vorbereitet
+## [1.0.0] - 2026-08-16
 
 ### Added
 
