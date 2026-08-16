@@ -36,3 +36,9 @@ Automatikmodus und CD-Queues:
   "Vollstaendig abspielen" empfohlen. "Anhaengen" behaelt vorhandene Titel
   vor der neuen CD. Eine Deck-Pause pausiert die Automatik; Fortsetzen des
   Decks setzt auch die Automatik fort.
+
+Equalizer und Lautstaerke:
+  Rock, Pop, Bluesrock und Dance verwenden einen Sicherheits-Preamp von -3 dB.
+  Deshalb kann die Wiedergabe beim Aktivieren eines Presets hoerbar leiser werden,
+  obwohl Deckregler, Crossfader und Master unveraendert bleiben. Equalizer und
+  Lautheitsnormalisierung arbeiten dabei als getrennte Verarbeitungsstufen.

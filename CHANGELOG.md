@@ -4,6 +4,35 @@ Alle wesentlichen Änderungen an DeckRelay werden in dieser Datei dokumentiert.
 
 ## [Unveröffentlicht]
 
+## [1.0.0] - 2026-08-16
+
+### Added
+
+- Automatische und manuelle Queue-Steuerung für die unabhängige Zwei-Deck-Wiedergabe
+  einschließlich Cue-Punkten, Crossfades und vollständiger Playlist-Reihenfolgen.
+- Jingles und Audio-Overlays mit Favoriten, Fades und optionalem Musik-Ducking.
+- ReplayGain-, Lautheits- und Equalizerfunktionen mit Peak-Schutz und getrennten
+  Einstellungen pro Titel, Queue und Deck.
+- Diagnoseberichte, Performance-Messwerte und ein automatisiertes Windows-Quality-Gate.
+- Portable Windows-Laufzeit mit vollständig gebündeltem Tcl/Tk sowie geprüfter
+  Datei-, Produktversions- und Artefaktkonsistenz.
+
+### Changed
+
+- Nicht bestätigte Wiedergabestarts werden kontrolliert übersprungen; bereinigte
+  Decks können anschließend für weitere Preloads wiederverwendet werden.
+- Queue-Pause und Fortsetzung steuern die betroffenen Decks konsistent, ohne
+  sichtbare Mixerwerte zu verändern.
+- Große Queues verursachen durch gebündelte Datenbankabfragen, inkrementelle
+  Statistikaktualisierung und begrenzte Hintergrundarbeit weniger GUI-Last.
+- Die vollständige Sicherung wird verständlich als Übertragung einer kompletten
+  Veranstaltung beschrieben und nach erfolgreicher Erstellung eindeutig bestätigt.
+- Hinweise zu deaktivierten Laufzeitanalysen erklären Produktionsmodus, Neustart und
+  beschreibbare portable Installationsordner ohne unnötige Administratorrechte.
+- Der FFmpeg-Verweis führt zur von FFmpeg verlinkten Windows-Build-Seite von gyan.dev.
+- Die Dokumentation erklärt den Einfluss des Equalizer-Sicherheits-Preamps auf die
+  wahrgenommene Lautstärke und seine Trennung von Deck-, Master- und ReplayGain-Werten.
+
 ## [1.0.0-beta.3] - 2026-08-15
 
 ### Fixed

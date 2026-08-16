@@ -20,11 +20,17 @@ Die Datenbank wird beim ersten Start unter `data/party_player.db` angelegt.
 
 ## Projektstatus
 
-DeckRelay befindet sich mit `v1.0.0-beta.3` in der öffentlichen Beta-Abnahme.
-Reale Audio-, Geräte-, NAS-, Skalierungs- und Langzeittests sind weiterhin erforderlich.
+DeckRelay `1.0.0` ist die stabile Windows-Version für den produktiven
+Veranstaltungsbetrieb. VLC/libVLC bleibt für jede Wiedergabe erforderlich.
 
-- Quellcode und kostenlose Windows-Beta-Releases sind öffentlich verfügbar.
-- Fehler, Missverständnisse und Funktionswünsche sollen über Issues gemeldet werden.
+Langzeitbetrieb, seltene Kombinationen aus Audiogeräten sowie Medien auf NAS- und
+Netzlaufwerken können abhängig von Hardware, Treibern und Netzwerk weiterhin
+Umgebungsrisiken enthalten. Eine vollständig fehlerfreie Funktion in jeder Umgebung
+wird nicht garantiert.
+
+- Quellcode und kostenlose Windows-Releases sind öffentlich verfügbar.
+- Fehler sollen mit Logdatei, möglichst genauem Zeitpunkt und Beschreibung der
+  Testsituation über Issues gemeldet werden.
 - Externe Code-Beiträge per Pull Request sind willkommen. Vor größeren Änderungen
   sollte zunächst ein Issue zur Abstimmung eröffnet werden.
 
@@ -75,3 +81,6 @@ vollständiger CD-Reihenfolge, Pause/Fortsetzen und Cue-Fallback ist in
 Gain-Reihenfolge, ReplayGain-Priorität, Peak-Schutz, Headroom und unveränderte
 Quelldateien sind in
 [`docs/loudness_normalization.md`](docs/loudness_normalization.md) dokumentiert.
+
+Der Einfluss des Equalizer-Sicherheits-Preamps auf die wahrgenommene Lautstärke
+ist in [`docs/equalizer.md`](docs/equalizer.md) erklärt.

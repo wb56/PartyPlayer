@@ -2054,7 +2054,7 @@ def test_diagnostic_report_is_saved_with_context_and_without_file_paths(tmp_path
 
     assert report_path.name.startswith("deckrelay-diagnostic-")
     assert report.startswith("DeckRelay diagnostic report")
-    assert "Version: 1.0.0-beta.3" in report
+    assert "Version: 1.0.0" in report
     assert "Test context: normal_playback" in report
     assert "Operating mode:" in report
     assert "status_tick.total:" in report
@@ -3308,6 +3308,9 @@ def test_database_delay_cannot_be_enabled_in_production_mode(tmp_path: Path) -> 
 
     assert controller._diagnostic_scenario.snapshot() is None
     assert view.errors
+    assert "Produktionsmodus" in view.errors[-1]
+    assert "neu starten" in view.errors[-1]
+    assert "Administratorrechte sind nicht erforderlich" in view.errors[-1]
 
 
 def test_restarting_stopped_duplicate_updates_only_its_queue_entry(tmp_path: Path) -> None:

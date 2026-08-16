@@ -63,6 +63,13 @@ Ausgabe berechnet sich unabhängig für jedes Deck:
 Deckregler × Normalisierungsfaktor × Fade × Crossfader × Master
 ```
 
+Der Equalizer ist eine zusätzliche, davon getrennte Verarbeitungsstufe. Bei
+Presets mit angehobenen Frequenzbändern senkt sein Sicherheits-Preamp das Signal
+ab, ohne Deckregler, Crossfader oder Master zu verändern. Deshalb kann ein
+Equalizerwechsel trotz unveränderter Regler hörbar lauter oder leiser wirken.
+Weitere Bedienhinweise stehen unter
+[Equalizer und wahrgenommene Lautstärke](equalizer.md).
+
 Änderungen an Gain oder Sicherheitsgrenzen während der Wiedergabe laufen über
 eine zeitlich begrenzte Gain-Rampe. Diese Rampe verändert weder Deckregler,
 Crossfaderposition noch Masterlautstärke. Trackwechsel, Eject, Stop und Fehler

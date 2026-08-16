@@ -1944,6 +1944,18 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         diagnostic_frame = ctk.CTkFrame(diagnostic_group, fg_color="transparent")
         self._diagnostic_frame = diagnostic_frame
         diagnostic_frame.grid(row=1, column=0, padx=12, pady=(2, 10), sticky="ew")
+        ctk.CTkLabel(
+            diagnostic_frame,
+            text=(
+                "Hinweis: Laufzeitanalysen benötigen keine Administratorrechte. "
+                "Produktionsmodus in den Einstellungen ausschalten und DeckRelay neu starten. "
+                "Die portable Version muss in einem beschreibbaren Ordner liegen."
+            ),
+            anchor="w",
+            justify="left",
+            wraplength=900,
+            text_color=("#7C2D12", "#FDBA74"),
+        ).pack(fill="x", pady=(0, 8))
         ctk.CTkLabel(diagnostic_frame, text="Diagnoseszenario:").pack(side="left", padx=(0, 8))
         self._diagnostic_context_labels = {
             "Leerlauf": "idle",
@@ -2450,7 +2462,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             return
         if result.state is BackupRestoreUiState.COMPLETED:
             title = {
-                BackupRestoreOperation.BACKUP: "Backup abgeschlossen",
+                BackupRestoreOperation.BACKUP: "Sicherung erfolgreich",
                 BackupRestoreOperation.MAINTENANCE: "Datenbankwartung abgeschlossen",
                 BackupRestoreOperation.PLAYLIST_EXPORT: "Playlist exportiert",
                 BackupRestoreOperation.PLAYLIST_IMPORT: "Playlist importiert",
@@ -2463,10 +2475,16 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         else:
             title = "Backup/Restore/Wartung nicht ausgeführt"
         path = f"\n\nDatei: {result.path}" if result.path else ""
+        message = result.message
+        if (
+            result.operation is BackupRestoreOperation.BACKUP
+            and result.state is BackupRestoreUiState.COMPLETED
+        ):
+            message = "Die komplette Veranstaltungssicherung wurde erfolgreich erstellt."
         show_silent_message(
             self,
             title,
-            result.message + path,
+            message + path,
             error=result.state is not BackupRestoreUiState.COMPLETED,
         )
         if (

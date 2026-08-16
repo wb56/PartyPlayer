@@ -92,6 +92,9 @@ Anwendungsdaten liegen in einer SQLite-Datenbank.
 - Mitgelieferte Presets wie Neutral, Rock, Pop, Bluesrock und Dance
 - Benutzerdefinierte Presets und dynamische VLC-Frequenzbänder
 - Preamp-Schutz gegen vorhersehbares Clipping
+- Die Presets Rock, Pop, Bluesrock und Dance verwenden einen Sicherheits-Preamp
+  von `-3 dB`. Dadurch kann die Wiedergabe trotz unveränderter Lautstärkeregler
+  hörbar leiser wirken.
 - Auflösungsreihenfolge: Titel, Playlist/Queue, Genre, globaler Standard
 - Temporäre Vorschau sowie dauerhafte Zuweisungen
 - Presets kopieren, speichern, umbenennen und löschen

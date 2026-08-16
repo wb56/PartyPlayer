@@ -25,6 +25,13 @@ PLAYLIST_IMPORT_PREPARATION = (
     "Bei einem anderen Laufwerk oder Basisordner anschließend die Medienpfade neu zuordnen."
 )
 
+FULL_EVENT_BACKUP_EXPLANATION = (
+    "KOMPLETTE VERANSTALTUNG ÜBERTRAGEN\n"
+    "Die Sicherung enthält den Musikkatalog, Playlists, Cue-/Gain-Werte, "
+    "Equalizer, Jingles und Einstellungen. Musik- und Jingle-Dateien müssen "
+    "separat auf den Veranstaltungsrechner kopiert werden."
+)
+
 
 class PlaylistConflictDialog(ctk.CTkToplevel):  # type: ignore[misc]
     """Return one explicit strategy without native alert sounds."""
@@ -197,23 +204,30 @@ class DatabaseBackupDialog(ctk.CTkToplevel):  # type: ignore[misc]
         self._safety = safety
         self.grid_columnconfigure(0, weight=1)
 
-        backup = self._group("SICHERUNG UND WIEDERHERSTELLUNG", 0)
+        backup = self._group("KOMPLETTE VERANSTALTUNG SICHERN / WIEDERHERSTELLEN", 0)
+        ctk.CTkLabel(
+            backup,
+            text=FULL_EVENT_BACKUP_EXPLANATION,
+            justify="left",
+            anchor="w",
+            wraplength=570,
+        ).grid(row=1, column=0, padx=12, pady=(0, 8), sticky="ew")
         self._button(
             backup,
-            "Sicherung im Standardordner erstellen",
+            "Komplette Sicherung im Standardordner erstellen",
             backup_default,
-            0,
+            1,
         )
-        self._button(backup, "Sicherung in anderem Ordner…", backup_other, 1)
+        self._button(backup, "Komplette Sicherung in anderem Ordner…", backup_other, 2)
         self._button(
             backup,
-            "Sicherung wiederherstellen…",
+            "Komplette Sicherung wiederherstellen…",
             restore,
-            2,
+            3,
             color=("#B91C1C", "#DC2626"),
         )
 
-        transfer = self._group("PLAYLIST- UND EQUALIZER-TRANSFER", 1)
+        transfer = self._group("EINZELNE PLAYLIST ODER EINSTELLUNG ÜBERTRAGEN", 1)
         preparation = ctk.CTkFrame(transfer, border_width=2, border_color=("#B45309", "#F59E0B"))
         preparation.grid(row=1, column=0, padx=12, pady=(4, 8), sticky="ew")
         preparation.grid_columnconfigure(0, weight=1)
