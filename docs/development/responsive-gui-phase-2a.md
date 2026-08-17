@@ -391,6 +391,69 @@ and verifies both executable versions before running the same three tests.
 
 No new runtime, build or development dependency was introduced by Phase 1, Phase 2A
 or Phase 2B-1.
+
+## Phase 2B-2a compact Live implementation
+
+Phase 2B-2a adds a compact Live composition without changing player, queue,
+automation, audio or database rules. Two compact deck views are created once and
+receive the same existing `Deck` state updates and controller commands as the large
+views. A presentation change only shows or hides prebuilt widgets. It does not issue a
+deck command, recreate the queue row pool, add a timer or add a subscription.
+
+Compact Live places the global status and workspace selector first, followed by both
+compact decks, the existing crossfader, queue source and automation controls, the
+existing virtualized queue and one central Jingle disclosure. An active Jingle is
+always identified next to a direct Stop action. The six existing favorite commands
+remain available through the disclosure and Ctrl+1 through Ctrl+6.
+The existing Mixer disclosure remains visible at the bottom in Compact and opens the
+same mixer controls; no parallel audio state or command path is introduced.
+On short work areas, expanding the compact Jingle favorites temporarily uses the
+Mixer disclosure's footer space. Collapsing the favorites restores the Mixer
+disclosure immediately, so both sets of controls remain reachable without overlap.
+The Jingle disclosure itself is placed above the flexible Queue viewport so it
+cannot be pushed behind the Mixer footer on a 768-pixel-high Windows work area.
+
+Compact Preparation is intentionally not presented as complete. It displays an
+explicit Phase-2C notice and a keyboard-focusable return to Live. Large Preparation
+and all catalog, analysis and playlist behavior remain unchanged.
+
+### Widget and lifecycle evidence
+
+The same empty-window diagnostic probe was run before and after the implementation:
+
+| Gauge | Before | After |
+| --- | ---: | ---: |
+| Total Tk widgets | 638 | 778 |
+| Current Tooltip instances | 30 | 52 |
+| Compact deck widgets | 0 | 98 |
+| Compact deck trees created | 0 | 2 |
+
+The increase is fixed at construction time. Repeated layout decisions are ignored by
+the stored presentation signature; the compact deck creation counter remains two.
+Only the currently visible deck representation is rendered during periodic status
+updates. The hidden representation receives one catch-up render when the presentation
+changes.
+
+### Windows acceptance matrix
+
+| Target environment | Phase 2B-2a result |
+| --- | --- |
+| 1920 x 1080 at 100% | Passed: Large remained complete. Forced Compact exposed both decks, Crossfader, queue/automation and Jingle disclosure. Large/Compact round trips restored Deck B and the full header after regression fixes. Compact Preparation showed the Phase-2C transition and returned to Live without losing Live state. |
+| 1920 x 1080 at 125% | Passed: Compact Live exposed both decks, Crossfader, queue/automation and the Jingle and Mixer disclosures without clipping primary controls. |
+| 1366 x 768 at 125% | Passed: Compact Live kept both decks, Crossfader, queue/automation and the Jingle and Mixer disclosures reachable without horizontal scrolling or vertical overlap. |
+
+No new dependency or license change was introduced.
+
+### Formatter diagnostic
+
+After an initially non-terminating Black run, `main_window.py` was checked in
+isolation with `--check --verbose` and a fresh temporary `BLACK_CACHE_DIR`. The final
+controlled run completed with exit code 0 in 2.635 seconds. Two delegated Python
+processes were observed, with 2.453 CPU seconds and a maximum observed working set of
+70.4 MiB. Black reported the file as already well formatted. A subsequent full check
+completed successfully for 270 files. The temporary cache directories and their
+diagnostic output were retained; no cache or project file was deleted.
+
 ## Confirmed product decisions for Phase 2B
 
 ### Jingle and overlay controls

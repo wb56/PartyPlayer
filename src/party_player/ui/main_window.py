@@ -45,6 +45,7 @@ from party_player.queue_view_events import (
     QueueViewRevision,
 )
 from party_player.ui.catalog_row import CatalogEntryViewModel, CatalogRowView
+from party_player.ui.compact_deck_presentation import compact_deck_presentation
 from party_player.ui.overlay_panel import OverlayPanel
 from party_player.ui.overlay_management_dialog import OverlayManagementDialog
 from party_player.ui.system_diagnostic_dialog import SystemDiagnosticDialog
@@ -123,6 +124,66 @@ from party_player.ui.dialogs import (
 def _time_text(seconds: float) -> str:
     value = max(0, round(seconds))
     return f"{value // 60:02d}:{value % 60:02d}"
+
+
+def _ellipsize(text: str, maximum: int) -> str:
+    if len(text) <= maximum:
+        return text
+    return f"{text[: maximum - 1]}…"
+
+
+def _center_panel_grid_options(compact: bool) -> dict[str, object]:
+    """Return a complete placement so a previous column span cannot leak."""
+    return {
+        "row": 1,
+        "column": 0 if compact else 1,
+        "columnspan": 3 if compact else 1,
+        "padx": 16 if compact else 8,
+        "pady": (4, 10) if compact else 8,
+        "sticky": "nsew",
+    }
+
+
+def _presentation_header_grid_options(compact: bool) -> dict[str, object]:
+    """Return complete header placement for reversible presentation changes."""
+    return {
+        "row": 0,
+        "column": 0 if compact else 1,
+        "columnspan": 2 if compact else 1,
+        "padx": (16, 8) if compact else 8,
+        "pady": (4, 2) if compact else (6, 3),
+        "sticky": "ew",
+    }
+
+
+def _mixer_container_grid_options(compact: bool) -> dict[str, object]:
+    """Keep the existing mixer disclosure reachable in both presentations."""
+    return {
+        "row": 2,
+        "column": 0,
+        "columnspan": 3,
+        "padx": 16,
+        "pady": (0, 8) if compact else (8, 16),
+        "sticky": "ew",
+    }
+
+
+def _compact_mixer_visible(overlays_expanded: bool) -> bool:
+    """Reserve the short compact footer for one disclosure at a time."""
+    return not overlays_expanded
+
+
+def _compact_live_rows() -> dict[str, int]:
+    """Keep direct Jingle access above the flexible queue viewport."""
+    return {
+        "decks": 0,
+        "crossfader": 1,
+        "overlays": 2,
+        "queue_header": 3,
+        "queue_toolbar": 4,
+        "directory_progress": 5,
+        "queue": 6,
+    }
 
 
 def _automatic_help_text() -> str:
@@ -885,6 +946,177 @@ class DeckPanel(ctk.CTkFrame):  # type: ignore[misc]
             self._import_callback(file_path, self.deck_id)
 
 
+class CompactDeckPanel(ctk.CTkFrame):  # type: ignore[misc]
+    """Dense second view of an existing deck without owning playback state."""
+
+    def __init__(
+        self,
+        master: object,
+        deck_id: str,
+        action: Callable[[str, str], None],
+        performance_monitor: PerformanceMonitor | None = None,
+    ) -> None:
+        accent = theme.DECK_ACCENTS[deck_id]
+        super().__init__(
+            master,
+            corner_radius=theme.PANEL_CORNER_RADIUS,
+            fg_color=theme.SURFACE_RAISED,
+            border_width=1,
+            border_color=accent,
+        )
+        self.deck_id = deck_id
+        self._action = action
+        self._accent = accent
+        self._performance = performance_monitor or PerformanceMonitor()
+        self._initialize_callbacks()
+        self._build_header_row()
+        self._build_progress_rows()
+        self._build_volume_row()
+
+    def _build_header_row(self) -> None:
+        self._identity = ctk.CTkLabel(
+            self,
+            text=f"DECK {self.deck_id}",
+            font=(theme.FONT_FAMILY, 18, "bold"),
+            text_color=self._accent,
+        )
+        self._identity.grid(row=0, column=0, padx=(10, 6), pady=(6, 0), sticky="w")
+        self._title = ctk.CTkLabel(
+            self, text="Kein Titel geladen", font=(theme.FONT_FAMILY, 14, "bold"), anchor="w"
+        )
+        self._title.grid(row=0, column=1, padx=4, pady=(6, 0), sticky="ew")
+        self._state = ctk.CTkLabel(self, text="LEER", text_color=theme.TEXT_MUTED, anchor="e")
+        self._state.grid(row=0, column=2, padx=(6, 10), pady=(6, 0), sticky="e")
+
+    def _build_progress_rows(self) -> None:
+        self._source = ctk.CTkLabel(self, text="Quelle: —", text_color=theme.TEXT_MUTED, anchor="w")
+        self._source.grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 1), sticky="ew")
+        self._time = ctk.CTkLabel(self, text="00:00 / 00:00 · Rest 00:00", anchor="e")
+        self._time.grid(row=1, column=2, padx=10, pady=(0, 1), sticky="e")
+        self._progress = _SeekProgressBar(self, progress_color=self._accent)
+        self._progress.set(0)
+        self._progress.bind("<Button-1>", self._seek_from_pointer)
+        self._progress.bind("<B1-Motion>", self._seek_from_pointer)
+        self._progress.grid(row=2, column=0, columnspan=3, padx=10, pady=(1, 4), sticky="ew")
+
+    def _build_volume_row(self) -> None:
+        self.grid_columnconfigure(1, weight=1)
+        self._volume_label = ctk.CTkLabel(self, text="Lautstärke 100 %", width=108, anchor="w")
+        self._volume_label.grid(row=4, column=0, padx=(10, 2), pady=(39, 6), sticky="w")
+        self._volume = ctk.CTkSlider(self, from_=0, to=1, command=self._volume_changed)
+        self._volume.set(1)
+        self._volume.grid(row=4, column=1, padx=2, pady=(3, 6), sticky="ew")
+        self._message = ctk.CTkLabel(self, text="Übergang bereit", anchor="e", width=135)
+        self._message.grid(row=4, column=2, padx=(4, 10), pady=(3, 6), sticky="e")
+
+    def _initialize_callbacks(self) -> None:
+        self._seek_callback: Callable[[str, float], None] | None = None
+        self._volume_callback: Callable[[str, float], None] | None = None
+        self._fade_callback: Callable[[str, bool], None] | None = None
+        self._cancel_fade_callback: Callable[[str], None] | None = None
+        self._updating_controls = False
+        self._progress_max = 1.0
+        self._render_cache: dict[str, object] = {}
+        self._tooltips: list[Tooltip] = []
+
+    def bind_controls(
+        self,
+        seek: Callable[[str, float], None],
+        volume: Callable[[str, float], None],
+        fade: Callable[[str, bool], None],
+        cancel_fade: Callable[[str], None],
+    ) -> None:
+        self._seek_callback = seek
+        self._volume_callback = volume
+        self._fade_callback = fade
+        self._cancel_fade_callback = cancel_fade
+
+    def dispose(self) -> None:
+        for tooltip in self._tooltips:
+            tooltip.close()
+        self._tooltips.clear()
+
+    def render(self, deck: Deck) -> None:
+        """Render the same Deck instance delivered to the large deck view."""
+        self._updating_controls = True
+        model = compact_deck_presentation(deck)
+        with self._performance.measure(
+            f"status_render.compact_deck_{self.deck_id.lower()}", warning_threshold_ms=10.0
+        ):
+            state_color = theme.TEXT_MUTED
+            if model.on_air:
+                state_color = theme.ON_AIR
+            elif model.error:
+                state_color = theme.ERROR
+            self._configure_if_changed("title", self._title, text=model.title)
+            self._configure_if_changed("source", self._source, text=f"Quelle: {model.source}")
+            self._configure_if_changed(
+                "state", self._state, text=model.state, text_color=state_color
+            )
+            self._configure_if_changed(
+                "time",
+                self._time,
+                text=(
+                    f"{_time_text(model.position)} / {_time_text(model.duration)} · "
+                    f"Rest {_time_text(model.remaining)}"
+                ),
+            )
+            self._configure_if_changed(
+                "border",
+                self,
+                border_color=theme.ON_AIR if model.on_air else self._accent,
+                border_width=2 if model.on_air else 1,
+            )
+            progress_max = max(1.0, model.duration)
+            self._progress_max = progress_max
+            progress_bucket = round(model.progress * 300)
+            if self._render_cache.get("progress") != progress_bucket:
+                self._progress.set(model.progress)
+                self._render_cache["progress"] = progress_bucket
+            if self._render_cache.get("volume") != model.volume:
+                self._volume.set(model.volume)
+                self._render_cache["volume"] = model.volume
+            self._configure_if_changed(
+                "volume_text", self._volume_label, text=f"Lautstärke {model.volume:.0%}"
+            )
+            message = model.error or model.warning or "Übergang bereit"
+            message_color = theme.TEXT_MUTED
+            if model.error:
+                message_color = theme.ERROR
+            elif model.warning:
+                message_color = theme.WARNING
+            self._configure_if_changed(
+                "message", self._message, text=message, text_color=message_color
+            )
+        self._updating_controls = False
+
+    def _configure_if_changed(self, key: str, widget: Any, **values: object) -> None:
+        signature = tuple(sorted(values.items()))
+        if self._render_cache.get(key) != signature:
+            widget.configure(**values)
+            self._render_cache[key] = signature
+
+    def _seek_from_pointer(self, event: Any) -> None:
+        width = max(1, int(self._progress.winfo_width()))
+        if self._seek_callback is not None:
+            self._seek_callback(
+                self.deck_id, min(1.0, max(0.0, event.x / width)) * self._progress_max
+            )
+
+    def _volume_changed(self, value: float) -> None:
+        self._volume_label.configure(text=f"Lautstärke {float(value):.0%}")
+        if not self._updating_controls and self._volume_callback is not None:
+            self._volume_callback(self.deck_id, float(value))
+
+    def _fade(self, fade_in: bool) -> None:
+        if self._fade_callback is not None:
+            self._fade_callback(self.deck_id, fade_in)
+
+    def _cancel_fade(self) -> None:
+        if self._cancel_fade_callback is not None:
+            self._cancel_fade_callback(self.deck_id)
+
+
 class MainWindow(ctk.CTk):  # type: ignore[misc]
     """Party-focused two-deck desktop window."""
 
@@ -923,6 +1155,12 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._presentation_coordinator: MainWindowPresentationCoordinator | None = None
         self._presentation_startup_guard = True
         self._presentation_status = GlobalStatusState()
+        self._latest_decks: dict[str, Deck] = {}
+        self._compact_layout_active = False
+        self._compact_layout_apply_count = 0
+        self._compact_widget_tree_creation_count = 0
+        self._compact_overlays_expanded = False
+        self._presentation_layout_signature: tuple[ResolvedPresentation, Workspace] | None = None
         self._controller: MainController | None = None
         self._system_diagnostic_report: SystemDiagnosticReport | None = None
         self._system_diagnostic_check: Callable[[], SystemDiagnosticReport] | None = None
@@ -1103,6 +1341,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self.grid_rowconfigure(1, weight=1)
 
         title_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self._title_frame = title_frame
         title_frame.grid(row=0, column=0, columnspan=3, padx=20, pady=(14, 8), sticky="w")
         ctk.CTkLabel(title_frame, text=PRODUCT_NAME, font=("Segoe UI", 28, "bold")).pack(
             side="left"
@@ -1114,6 +1353,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             text_color="#aaaaaa",
         ).pack(side="left", padx=(10, 0), pady=(8, 0))
         window_controls = ctk.CTkFrame(self, fg_color="transparent")
+        self._window_controls = window_controls
         window_controls.grid(row=0, column=2, padx=(8, 16), pady=(8, 4), sticky="e")
         self._on_air_summary = ctk.CTkLabel(
             window_controls,
@@ -1155,6 +1395,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             command=self._request_close,
         ).pack(side="left", padx=2)
         presentation_header = ctk.CTkFrame(self, fg_color="transparent")
+        self._presentation_header = presentation_header
         presentation_header.grid(row=0, column=1, padx=8, pady=(6, 3), sticky="ew")
         presentation_header.grid_columnconfigure(0, weight=1)
         self._session_summary = ctk.CTkLabel(
@@ -1211,9 +1452,48 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         center.grid_rowconfigure(2, weight=50, minsize=80, uniform="list_workspace")
         center.grid_rowconfigure(9, weight=50, minsize=80, uniform="list_workspace")
         self._workspace_catalog_ratio = 0.5
+        self._compact_decks_frame = ctk.CTkFrame(center, fg_color="transparent")
+        self._compact_decks_frame.grid_columnconfigure(0, weight=1, uniform="compact_decks")
+        self._compact_decks_frame.grid_columnconfigure(1, weight=1, uniform="compact_decks")
+        self.compact_deck_a = CompactDeckPanel(
+            self._compact_decks_frame, "A", self._deck_action, self._performance
+        )
+        self.compact_deck_a.grid(row=0, column=0, padx=(0, 4), sticky="nsew")
+        self.compact_deck_b = CompactDeckPanel(
+            self._compact_decks_frame, "B", self._deck_action, self._performance
+        )
+        self.compact_deck_b.grid(row=0, column=1, padx=(4, 0), sticky="nsew")
+        self._compact_widget_tree_creation_count = 2
+        self._compact_decks_frame.grid_remove()
+
+        self._compact_preparation = ctk.CTkFrame(center, corner_radius=10)
+        self._compact_preparation.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            self._compact_preparation,
+            text="Kompakte Vorbereitung folgt in Phase 2C",
+            font=(theme.FONT_FAMILY, 18, "bold"),
+        ).grid(row=0, column=0, padx=20, pady=(28, 6))
+        ctk.CTkLabel(
+            self._compact_preparation,
+            text=(
+                "Katalog und Analyse bleiben unverändert. Für den Live-Betrieb "
+                "bitte LIVE wählen oder für die Vorbereitung die Ansicht GROSS verwenden."
+            ),
+            text_color=theme.TEXT_MUTED,
+            wraplength=700,
+        ).grid(row=1, column=0, padx=20, pady=(0, 12))
+        self._compact_preparation_live_button = ctk.CTkButton(
+            self._compact_preparation,
+            text="Zurück zu LIVE",
+            height=34,
+            command=lambda: self._select_workspace(Workspace.LIVE),
+        )
+        self._compact_preparation_live_button.grid(row=2, column=0, padx=20, pady=(0, 28))
+        self._compact_preparation.grid_remove()
         self._summary = ctk.CTkLabel(center, text="Katalog wird geladen …")
         self._summary.grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
         search_frame = ctk.CTkFrame(center, fg_color="transparent")
+        self._search_frame = search_frame
         search_frame.grid(row=1, column=0, padx=12, pady=4, sticky="ew")
         search_frame.grid_columnconfigure(0, weight=1)
         self._search = ctk.CTkEntry(
@@ -1322,6 +1602,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         )
 
         crossfader_bar = ctk.CTkFrame(center, corner_radius=10, border_width=1)
+        self._crossfader_bar = crossfader_bar
         crossfader_bar.grid(row=3, column=0, padx=12, pady=(4, 8), sticky="ew")
         crossfader_bar.grid_columnconfigure(1, weight=1)
         self._deck_status_labels: dict[str, ctk.CTkLabel] = {}
@@ -1399,6 +1680,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._workspace_splitter = workspace_splitter
 
         queue_header = ctk.CTkFrame(center, fg_color="transparent")
+        self._queue_header = queue_header
         queue_header.grid(row=5, column=0, padx=12, pady=(8, 2), sticky="ew")
         ctk.CTkLabel(queue_header, text="Party-Queue", font=("Segoe UI", 17, "bold")).pack(
             side="left"
@@ -1453,6 +1735,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         )
         self._queue_previous_button.pack(side="right", padx=4)
         queue_toolbar = ctk.CTkFrame(center, fg_color="transparent")
+        self._queue_toolbar = queue_toolbar
         queue_toolbar.grid(row=6, column=0, padx=12, pady=2, sticky="ew")
         self._duplicate_switch = ctk.CTkSwitch(
             queue_toolbar,
@@ -1550,6 +1833,10 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             anchor="e",
         )
         self._automatic_status_label.pack(side="right", fill="x", expand=True, padx=(8, 2))
+        self._queue_source_tooltip = Tooltip(
+            self._queue_source_button,
+            "Aktuelle Herkunft anzeigen und weitere Titel zur Queue hinzufügen",
+        )
         self._static_tooltips.extend(
             (
                 Tooltip(
@@ -1561,10 +1848,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
                 ),
                 Tooltip(self._queue_previous_button, "Vorherigen Queue-Ausschnitt anzeigen"),
                 Tooltip(self._queue_next_button, "Nächsten Queue-Ausschnitt anzeigen"),
-                Tooltip(
-                    self._queue_source_button,
-                    "Aktuelle Herkunft anzeigen und weitere Titel zur Queue hinzufügen",
-                ),
+                self._queue_source_tooltip,
                 Tooltip(
                     directory_button,
                     "Alle MP3-/FLAC-Dateien eines Ordners in Katalog und Queue aufnehmen",
@@ -1589,6 +1873,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         )
         self._directory_progress_label.grid(row=0, column=1)
         self._directory_progress_frame.grid_remove()
+        self._directory_progress_visible = False
         saved_toolbar = ctk.CTkFrame(center, fg_color="transparent")
         saved_toolbar.grid(row=8, column=0, padx=12, pady=2, sticky="ew")
         ctk.CTkLabel(saved_toolbar, text="Titel hinzufügen aus Playlist:").pack(
@@ -1658,6 +1943,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         )
         self._saved_toolbar = saved_toolbar
         self._saved_toolbar.grid_remove()
+        self._saved_toolbar_visible = False
         self._queue = SmoothScrollableFrame(center)
         self._queue.grid(row=9, column=0, padx=12, pady=(2, 12), sticky="nsew")
         self._queue.set_scroll_callback(self._queue_scrolled)
@@ -1667,6 +1953,56 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             text_color=theme.TEXT_MUTED,
             font=(theme.FONT_FAMILY, 14),
         )
+
+        self._compact_overlay_frame = ctk.CTkFrame(center, corner_radius=8)
+        self._compact_overlay_frame.grid_columnconfigure(1, weight=1)
+        self._compact_overlay_toggle = ctk.CTkButton(
+            self._compact_overlay_frame,
+            text="Jingles anzeigen ▾",
+            width=130,
+            height=32,
+            fg_color=theme.SURFACE_RAISED,
+            command=self._toggle_compact_overlays,
+        )
+        self._compact_overlay_toggle.grid(row=0, column=0, padx=(6, 4), pady=4)
+        self._compact_overlay_status = ctk.CTkLabel(
+            self._compact_overlay_frame, text="Kein Jingle aktiv", anchor="w"
+        )
+        self._compact_overlay_status.grid(row=0, column=1, padx=4, pady=4, sticky="ew")
+        self._compact_overlay_stop = ctk.CTkButton(
+            self._compact_overlay_frame,
+            text="■ Jingle stoppen",
+            width=126,
+            height=32,
+            fg_color=theme.DANGER,
+            hover_color=theme.DANGER_HOVER,
+            command=self._stop_overlay,
+        )
+        self._compact_overlay_stop.grid(row=0, column=2, padx=(4, 6), pady=4)
+        self._compact_overlay_stop.grid_remove()
+        self._compact_overlay_pads = ctk.CTkFrame(
+            self._compact_overlay_frame, fg_color="transparent"
+        )
+        self._compact_overlay_pads.grid(
+            row=1, column=0, columnspan=3, padx=5, pady=(0, 5), sticky="ew"
+        )
+        self._compact_overlay_pad_buttons: list[ctk.CTkButton] = []
+        self._compact_overlay_pad_tooltips: list[Tooltip] = []
+        for position in range(1, 7):
+            self._compact_overlay_pads.grid_columnconfigure(position - 1, weight=1)
+            button = ctk.CTkButton(
+                self._compact_overlay_pads,
+                text=f"{position} · frei",
+                height=32,
+                command=lambda selected=position: self._start_overlay_favorite(selected),
+            )
+            button.grid(row=0, column=position - 1, padx=2, sticky="ew")
+            self._compact_overlay_pad_buttons.append(button)
+            tooltip = Tooltip(button, f"Favoritenplatz {position} ist nicht belegt")
+            self._compact_overlay_pad_tooltips.append(tooltip)
+            self._static_tooltips.append(tooltip)
+        self._compact_overlay_pads.grid_remove()
+        self._compact_overlay_frame.grid_remove()
 
         mixer_container = ctk.CTkFrame(self, corner_radius=12)
         self._mixer_container = mixer_container
@@ -2119,6 +2455,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         initial_state = PresentationState(
             preference=self._presentation_initial_preference,
             workspace=self._presentation_initial_workspace,
+            compact_content_available=True,
         )
         self._presentation_coordinator = MainWindowPresentationCoordinator(
             initial_state,
@@ -3052,7 +3389,41 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
                 else "Keine Jingles"
             ),
         )
+        self._refresh_compact_overlay_pads()
         self._render_overlay()
+
+    def _refresh_compact_overlay_pads(self) -> None:
+        for position, button in enumerate(self._compact_overlay_pad_buttons, start=1):
+            record = self._overlay_snapshot.favorites[position - 1]
+            if record is None:
+                text = f"{position} · frei"
+                description = f"Favoritenplatz {position} ist nicht belegt"
+                enabled = True
+            else:
+                text = f"{position} · {record.definition.name}"
+                description = f"Jingle starten: {record.definition.name} (Strg+{position})"
+                enabled = (
+                    record.enabled
+                    and record.definition.overlay_id not in self._overlay_snapshot.missing_file_ids
+                )
+            button.configure(text=text, state="normal" if enabled else "disabled")
+            self._compact_overlay_pad_tooltips[position - 1].set_text(description)
+
+    def _toggle_compact_overlays(self) -> None:
+        expanded = self._compact_overlays_expanded
+        if expanded:
+            self._compact_overlay_pads.grid_remove()
+            self._compact_overlays_expanded = False
+            if self._compact_layout_active and _compact_mixer_visible(False):
+                self._mixer_container.grid(**_mixer_container_grid_options(True))
+        else:
+            self._compact_overlay_pads.grid()
+            self._compact_overlays_expanded = True
+            if self._compact_layout_active:
+                self._mixer_container.grid_remove()
+        self._compact_overlay_toggle.configure(
+            text="Jingles ausblenden ▴" if not expanded else "Jingles anzeigen ▾"
+        )
 
     def _open_deck_equalizer(self, deck_id: str) -> None:
         """Open one compact deck-local assignment dialog."""
@@ -3827,6 +4198,12 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             "tooltip_instances_created_total": tooltip_stats.created_total,
             "tooltip_instances_destroyed_total": tooltip_stats.destroyed_total,
             "tk_widget_count": count_widgets(self),
+            "large_deck_widget_count": count_widgets(self.deck_a) + count_widgets(self.deck_b),
+            "compact_deck_widget_count": (
+                count_widgets(self.compact_deck_a) + count_widgets(self.compact_deck_b)
+            ),
+            "compact_widget_tree_creation_count": self._compact_widget_tree_creation_count,
+            "presentation.layout_applications": self._compact_layout_apply_count,
             "catalog_dirty_rows": self._catalog_dirty_scheduler.pending_count,
             "queue_dirty_rows": self._queue_dirty_scheduler.pending_count,
             "overlay.active": int(
@@ -4188,8 +4565,9 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         )
 
     def _apply_presentation_state(self, state: PresentationState, decision: LayoutDecision) -> None:
-        """Apply only Phase 2B-1 focus/status changes; never rebuild main content."""
+        """Switch prebuilt view trees without changing any domain state."""
         self._refresh_presentation_header(state)
+        self._apply_presentation_layout(state)
         self._focus_workspace(state.workspace)
         capabilities = decision.capabilities
         client_size = self._logical_client_size(self.winfo_width(), self.winfo_height())
@@ -4208,9 +4586,156 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             state.compact_content_available,
         )
 
+    def _apply_presentation_layout(self, state: PresentationState) -> None:
+        signature = (state.resolved, state.workspace)
+        if signature == self._presentation_layout_signature:
+            return
+        self._presentation_layout_signature = signature
+        self._compact_layout_apply_count += 1
+        if state.resolved is ResolvedPresentation.COMPACT:
+            self._show_compact_layout(state.workspace)
+        else:
+            self._show_large_layout()
+
+    def _hide_center_content(self) -> None:
+        for widget in (
+            self._summary,
+            self._search_frame,
+            self._catalog,
+            self._crossfader_bar,
+            self._workspace_splitter,
+            self._queue_header,
+            self._queue_toolbar,
+            self._directory_progress_frame,
+            self._saved_toolbar,
+            self._queue,
+            self._compact_decks_frame,
+            self._compact_overlay_frame,
+            self._compact_preparation,
+        ):
+            widget.grid_remove()
+
+    def _reset_center_rows(self) -> None:
+        for row in range(10):
+            self._center_panel.grid_rowconfigure(row, weight=0, minsize=0, uniform="")
+
+    def _show_large_layout(self) -> None:
+        self._compact_layout_active = False
+        self.grid_columnconfigure(0, weight=1, uniform="main")
+        self.grid_columnconfigure(1, weight=2, uniform="main")
+        self.grid_columnconfigure(2, weight=1, uniform="main")
+        self._title_frame.grid(row=0, column=0, padx=20, pady=(14, 8), sticky="w")
+        self._presentation_header.grid(**_presentation_header_grid_options(False))
+        self._window_controls.grid(
+            row=0,
+            column=2,
+            columnspan=1,
+            padx=(8, 16),
+            pady=(8, 4),
+            sticky="e",
+        )
+        self._hide_center_content()
+        self._reset_center_rows()
+        self.deck_a.grid(row=1, column=0, padx=(16, 8), pady=8, sticky="nsew")
+        self.deck_b.grid(row=1, column=2, padx=(8, 16), pady=8, sticky="nsew")
+        self._center_panel.grid(**_center_panel_grid_options(False))
+        self._mixer_container.grid(**_mixer_container_grid_options(False))
+        self._summary.grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
+        self._search_frame.grid(row=1, column=0, padx=12, pady=4, sticky="ew")
+        self._catalog.grid(row=2, column=0, padx=12, pady=6, sticky="nsew")
+        self._crossfader_bar.grid(row=3, column=0, padx=12, pady=(4, 8), sticky="ew")
+        self._workspace_splitter.grid(row=4, column=0, padx=12, pady=(0, 4), sticky="ew")
+        self._queue_header.grid(row=5, column=0, padx=12, pady=(8, 2), sticky="ew")
+        self._queue_toolbar.grid(row=6, column=0, padx=12, pady=2, sticky="ew")
+        if self._directory_progress_visible:
+            self._directory_progress_frame.grid(row=7, column=0, padx=12, pady=2, sticky="ew")
+        if self._saved_toolbar_visible:
+            self._saved_toolbar.grid(row=8, column=0, padx=12, pady=2, sticky="ew")
+        self._queue.grid(row=9, column=0, padx=12, pady=(2, 12), sticky="nsew")
+        self._set_workspace_split(self._workspace_catalog_ratio, persist=False)
+        for deck_id, deck in self._latest_decks.items():
+            (self.deck_a if deck_id == "A" else self.deck_b).render(deck)
+
+    def _show_compact_layout(self, workspace: Workspace) -> None:
+        self._compact_layout_active = True
+        self.grid_columnconfigure(0, weight=0, uniform="")
+        self.grid_columnconfigure(1, weight=1, uniform="")
+        self.grid_columnconfigure(2, weight=0, uniform="")
+        self._title_frame.grid_remove()
+        self._presentation_header.grid(**_presentation_header_grid_options(True))
+        self._window_controls.grid(
+            row=0,
+            column=2,
+            columnspan=1,
+            padx=(4, 12),
+            pady=(4, 2),
+            sticky="e",
+        )
+        self._hide_center_content()
+        self._reset_center_rows()
+        self.deck_a.grid_remove()
+        self.deck_b.grid_remove()
+        if workspace is Workspace.LIVE and not _compact_mixer_visible(
+            self._compact_overlays_expanded
+        ):
+            self._mixer_container.grid_remove()
+        else:
+            self._mixer_container.grid(**_mixer_container_grid_options(True))
+        self._center_panel.grid(**_center_panel_grid_options(True))
+        if workspace is Workspace.PREPARATION:
+            self._center_panel.grid_rowconfigure(0, weight=1)
+            self._compact_preparation.grid(row=0, column=0, padx=8, pady=8, sticky="nsew")
+            return
+        rows = _compact_live_rows()
+        self._compact_decks_frame.grid(
+            row=rows["decks"], column=0, padx=8, pady=(6, 3), sticky="ew"
+        )
+        for deck_id, deck in self._latest_decks.items():
+            (self.compact_deck_a if deck_id == "A" else self.compact_deck_b).render(deck)
+        self._crossfader_bar.grid(row=rows["crossfader"], column=0, padx=8, pady=3, sticky="ew")
+        self._compact_overlay_frame.grid(
+            row=rows["overlays"], column=0, padx=8, pady=(2, 2), sticky="ew"
+        )
+        self._queue_header.grid(
+            row=rows["queue_header"], column=0, padx=8, pady=(2, 0), sticky="ew"
+        )
+        self._queue_toolbar.grid(row=rows["queue_toolbar"], column=0, padx=8, pady=0, sticky="ew")
+        if self._directory_progress_visible:
+            self._directory_progress_frame.grid(
+                row=rows["directory_progress"],
+                column=0,
+                padx=8,
+                pady=1,
+                sticky="ew",
+            )
+        self._center_panel.grid_rowconfigure(rows["queue"], weight=1, minsize=80)
+        self._queue.grid(row=rows["queue"], column=0, padx=8, pady=(2, 6), sticky="nsew")
+        # Startup catalog/queue population can finish after the first presentation
+        # decision. Reassert the mutually exclusive compact tree after those idle
+        # callbacks without touching any domain state.
+        self.schedule(50, self._ensure_compact_layout_exclusive)
+        self.schedule(250, self._ensure_compact_layout_exclusive)
+
+    def _ensure_compact_layout_exclusive(self) -> None:
+        if not self._compact_layout_active:
+            return
+        for widget in (
+            self._summary,
+            self._search_frame,
+            self._catalog,
+            self._workspace_splitter,
+            self._saved_toolbar,
+        ):
+            widget.grid_remove()
+
     def _focus_workspace(self, selected: Workspace) -> None:
         """Move keyboard focus without changing selection or domain state."""
-        target = self._automatic_queue_button if selected is Workspace.LIVE else self._search
+        if selected is Workspace.LIVE:
+            target = self._automatic_queue_button
+        elif self.__dict__.get("_compact_layout_active", False):
+            target = self._compact_preparation_live_button
+        else:
+            target = self._search
         target.focus_set()
 
     def _refresh_presentation_header(self, state: PresentationState) -> None:
@@ -4228,14 +4753,14 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         }[state.preference]
         resolved_note = ""
         if state.resolved is ResolvedPresentation.COMPACT:
-            resolved_note = " · KOMPAKT (Inhalte ab 2B-2)"
+            resolved_note = " · KOMPAKT"
         self._presentation_mode_button.configure(text=f"Ansicht: {mode_text} ▾")
         self._render_global_status(resolved_note)
 
     def _render_global_status(self, resolved_note: str = "") -> None:
         if not resolved_note and self._presentation_coordinator is not None:
             if self._presentation_coordinator.state.resolved is ResolvedPresentation.COMPACT:
-                resolved_note = " · KOMPAKT (Inhalte ab 2B-2)"
+                resolved_note = " · KOMPAKT"
         status = self._presentation_status
         self._global_status_label.configure(
             text=global_status_text(status, resolved_note),
@@ -4317,6 +4842,21 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             self._mixer_overlay_stop.grid()
         else:
             self._mixer_overlay_stop.grid_remove()
+        active = model.state in {
+            OverlayState.PREPARING,
+            OverlayState.FADING_IN,
+            OverlayState.PLAYING,
+            OverlayState.FADING_OUT,
+        }
+        active_name = model.active_name or model.selected_name
+        self._compact_overlay_status.configure(
+            text=(f"Aktiver Jingle: {active_name}" if active else "Kein Jingle aktiv"),
+            text_color=theme.WARNING if active else theme.TEXT_MUTED,
+        )
+        if active:
+            self._compact_overlay_stop.grid()
+        else:
+            self._compact_overlay_stop.grid_remove()
 
     def _overlay_view_model(
         self,
@@ -5193,12 +5733,17 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         )
 
     def show_queue_origin(self, text: str) -> None:
-        self._queue_source_button.configure(text=f"Quelle: {text} ▾")
+        self._queue_source_button.configure(text=f"Quelle: {_ellipsize(text, 28)} ▾")
+        self._queue_source_tooltip.set_text(f"Aktive Queue-Quelle: {text}")
         self._presentation_status = replace(self._presentation_status, source=text)
         self._render_global_status()
 
     def show_deck(self, deck: Deck) -> None:
-        (self.deck_a if deck.deck_id == "A" else self.deck_b).render(deck)
+        self._latest_decks[deck.deck_id] = deck
+        if self._compact_layout_active:
+            (self.compact_deck_a if deck.deck_id == "A" else self.compact_deck_b).render(deck)
+        else:
+            (self.deck_a if deck.deck_id == "A" else self.deck_b).render(deck)
         self._deck_on_air[deck.deck_id] = deck.is_on_air
         if deck.is_on_air:
             status_text = "ON AIR"
@@ -5403,10 +5948,21 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self, processed: int, total: int | None, active: bool
     ) -> None:
         if not active:
+            self._directory_progress_visible = False
             self._directory_progress.stop()
             self._directory_progress_frame.grid_remove()
             return
-        self._directory_progress_frame.grid()
+        self._directory_progress_visible = True
+        if self._compact_layout_active:
+            self._directory_progress_frame.grid(
+                row=_compact_live_rows()["directory_progress"],
+                column=0,
+                padx=8,
+                pady=1,
+                sticky="ew",
+            )
+        else:
+            self._directory_progress_frame.grid(row=7, column=0, padx=12, pady=2, sticky="ew")
         if total is None:
             self._directory_progress.configure(mode="indeterminate")
             self._directory_progress.start()
@@ -6029,9 +6585,12 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
 
     def _toggle_saved_toolbar(self) -> None:
         if self._saved_toolbar.winfo_ismapped():
+            self._saved_toolbar_visible = False
             self._saved_toolbar.grid_remove()
         else:
-            self._saved_toolbar.grid()
+            self._saved_toolbar_visible = True
+            if not self._compact_layout_active:
+                self._saved_toolbar.grid(row=8, column=0, padx=12, pady=2, sticky="ew")
 
     def _load_playlist_from_source_menu(self, name: str) -> None:
         self._saved_queue_menu.set(name)
@@ -6588,6 +7147,12 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._static_tooltips.clear()
         self.deck_a.dispose()
         self.deck_b.dispose()
+        compact_deck_a = self.__dict__.get("compact_deck_a")
+        compact_deck_b = self.__dict__.get("compact_deck_b")
+        if compact_deck_a is not None:
+            compact_deck_a.dispose()
+        if compact_deck_b is not None:
+            compact_deck_b.dispose()
         for catalog_row in self._catalog_rows:
             catalog_row.dispose()
         self._catalog_rows.clear()

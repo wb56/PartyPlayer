@@ -1,14 +1,22 @@
 from party_player.ui.main_window import (
     MainWindow,
+    _center_panel_grid_options,
+    _compact_mixer_visible,
+    _compact_live_rows,
     _diagnostic_toggle_text,
     _automatic_help_text,
     _initial_catalog_pool_target,
     _main_layout_spacing,
+    _mixer_container_grid_options,
     _optionmenu_changes,
+    _presentation_header_grid_options,
     _queue_model_count,
     _queue_pool_size,
 )
-from party_player.presentation import Workspace
+from party_player.ui.compact_deck_presentation import compact_deck_presentation
+from party_player.enums import DeckState
+from party_player.models import Deck, Track
+from party_player.presentation import PresentationState, ResolvedPresentation, Workspace
 
 
 class Disposable:
@@ -30,6 +38,14 @@ class GridDouble:
 
     def grid_rowconfigure(self, row: int, **values: int) -> None:
         self.rows[row] = values
+
+
+class RemovableGridDouble:
+    def __init__(self) -> None:
+        self.remove_count = 0
+
+    def grid_remove(self) -> None:
+        self.remove_count += 1
 
 
 class SplitControllerDouble:
@@ -59,6 +75,68 @@ def test_main_layout_spacing_uses_only_two_stable_size_classes() -> None:
     assert _main_layout_spacing(1350) == (16, 8, 8)
     assert _main_layout_spacing(1920) == (16, 8, 8)
     assert _initial_catalog_pool_target(50, 24) == 24
+
+
+def test_center_panel_restores_one_column_after_compact_layout() -> None:
+    assert _center_panel_grid_options(True)["columnspan"] == 3
+    assert _center_panel_grid_options(False) == {
+        "row": 1,
+        "column": 1,
+        "columnspan": 1,
+        "padx": 8,
+        "pady": 8,
+        "sticky": "nsew",
+    }
+
+
+def test_presentation_header_restores_one_column_after_compact_layout() -> None:
+    assert _presentation_header_grid_options(True)["columnspan"] == 2
+    assert _presentation_header_grid_options(False) == {
+        "row": 0,
+        "column": 1,
+        "columnspan": 1,
+        "padx": 8,
+        "pady": (6, 3),
+        "sticky": "ew",
+    }
+
+
+def test_mixer_disclosure_remains_reachable_in_compact_layout() -> None:
+    compact = _mixer_container_grid_options(True)
+    large = _mixer_container_grid_options(False)
+
+    assert compact["row"] == large["row"] == 2
+    assert compact["columnspan"] == large["columnspan"] == 3
+    assert compact["pady"] == (0, 8)
+
+
+def test_compact_jingle_pads_temporarily_use_mixer_footer_space() -> None:
+    assert _compact_mixer_visible(overlays_expanded=False) is True
+    assert _compact_mixer_visible(overlays_expanded=True) is False
+
+
+def test_compact_jingle_disclosure_precedes_flexible_queue_rows() -> None:
+    rows = _compact_live_rows()
+
+    assert rows["crossfader"] < rows["overlays"] < rows["queue_header"]
+    assert rows["queue_toolbar"] < rows["queue"]
+
+
+def test_compact_layout_reassertion_hides_deferred_large_workspace_widgets() -> None:
+    window = object.__new__(MainWindow)
+    window._compact_layout_active = True
+    widgets = [RemovableGridDouble() for _ in range(5)]
+    (
+        window._summary,
+        window._search_frame,
+        window._catalog,
+        window._workspace_splitter,
+        window._saved_toolbar,
+    ) = widgets
+
+    MainWindow._ensure_compact_layout_exclusive(window)
+
+    assert [widget.remove_count for widget in widgets] == [1, 1, 1, 1, 1]
 
 
 def test_diagnostic_disclosure_label_matches_expanded_state() -> None:
@@ -137,6 +215,45 @@ def test_workspace_focus_moves_to_live_action_or_preparation_search() -> None:
     window._focus_workspace(Workspace.PREPARATION)
     assert live.focus_count == 1
     assert search.focus_count == 1
+
+
+def test_compact_deck_projects_existing_deck_state_without_mutation() -> None:
+    track = Track(7, r"D:\Musik\long-title.mp3", "Long title", "Artist", "Album", 240.0)
+    deck = Deck(
+        "A",
+        loaded_track=track,
+        state=DeckState.PLAYING,
+        volume=0.72,
+        position=45.0,
+        duration=240.0,
+        is_on_air=True,
+        cue_warning="Cue prüfen",
+    )
+
+    model = compact_deck_presentation(deck)
+
+    assert model.title == "Artist – Long title"
+    assert model.source == "long-title.mp3"
+    assert model.state == "● ON AIR"
+    assert model.progress == 45.0 / 240.0
+    assert model.warning == "Cue prüfen"
+    assert deck.position == 45.0
+
+
+def test_repeated_compact_layout_decision_does_not_rebuild_or_reapply() -> None:
+    window = object.__new__(MainWindow)
+    window._presentation_layout_signature = None
+    window._compact_layout_apply_count = 0
+    applied: list[Workspace] = []
+    window._show_compact_layout = applied.append
+    window._show_large_layout = lambda: None
+    state = PresentationState(resolved=ResolvedPresentation.COMPACT, workspace=Workspace.LIVE)
+
+    window._apply_presentation_layout(state)
+    window._apply_presentation_layout(state)
+
+    assert applied == [Workspace.LIVE]
+    assert window._compact_layout_apply_count == 1
 
 
 def test_queue_dispose_counts_destroyed_widgets_once() -> None:

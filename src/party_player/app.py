@@ -22,6 +22,7 @@ from party_player.controllers.main_controller import MainController
 from party_player.controllers.cue_point_controller import CuePointController
 from party_player.controllers.loudness_controller import LoudnessController
 from party_player.controllers.overlay_controller import OverlayController
+from party_player.ui.compact_deck_actions import bind_compact_decks
 from party_player.core.logging_config import configure_logging
 from party_player.core.paths import AppPaths
 from party_player.crossfader_service import CrossfaderService
@@ -484,6 +485,7 @@ class PartyPlayerApplication:
         )
         replaygain_cache.refresh_catalog()
         window.bind_controller(controller)
+        bind_compact_decks(controller, window.compact_deck_a, window.compact_deck_b)
 
         def run_system_diagnostic() -> SystemDiagnosticReport:
             resolution = dependency_service.check_configured(settings)
