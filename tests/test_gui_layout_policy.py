@@ -3,6 +3,7 @@ from party_player.ui.main_window import (
     _center_panel_grid_options,
     _compact_mixer_visible,
     _compact_live_rows,
+    _compact_preparation_rows,
     _diagnostic_toggle_text,
     _automatic_help_text,
     _initial_catalog_pool_target,
@@ -16,7 +17,12 @@ from party_player.ui.main_window import (
 from party_player.ui.compact_deck_presentation import compact_deck_presentation
 from party_player.enums import DeckState
 from party_player.models import Deck, Track
-from party_player.presentation import PresentationState, ResolvedPresentation, Workspace
+from party_player.presentation import (
+    GlobalStatusState,
+    PresentationState,
+    ResolvedPresentation,
+    Workspace,
+)
 
 
 class Disposable:
@@ -62,6 +68,14 @@ class FocusDouble:
 
     def focus_set(self) -> None:
         self.focus_count += 1
+
+
+class ConfigureDouble:
+    def __init__(self) -> None:
+        self.values: dict[str, object] = {}
+
+    def configure(self, **values: object) -> None:
+        self.values.update(values)
 
 
 def test_initial_catalog_pool_is_bounded_and_reuses_existing_rows() -> None:
@@ -120,6 +134,91 @@ def test_compact_jingle_disclosure_precedes_flexible_queue_rows() -> None:
 
     assert rows["crossfader"] < rows["overlays"] < rows["queue_header"]
     assert rows["queue_toolbar"] < rows["queue"]
+
+
+def test_compact_preparation_keeps_catalog_as_the_flexible_center_region() -> None:
+    rows = _compact_preparation_rows()
+
+    assert rows["live_status"] < rows["search"] < rows["catalog"]
+    assert rows["catalog"] < rows["tools"] < rows["playlist"]
+
+
+def test_ctrl_f_switches_compact_live_to_preparation_before_focusing() -> None:
+    window = object.__new__(MainWindow)
+    search = FocusDouble()
+    selected: list[Workspace] = []
+    scheduled: list[object] = []
+    window._search = search
+    window._presentation_coordinator = type(
+        "Coordinator",
+        (),
+        {
+            "state": PresentationState(
+                resolved=ResolvedPresentation.COMPACT,
+                workspace=Workspace.LIVE,
+            )
+        },
+    )()
+    window._select_workspace = selected.append
+    window.schedule = lambda _delay, callback: scheduled.append(callback)
+
+    MainWindow._focus_search(window)
+
+    assert selected == [Workspace.PREPARATION]
+    assert search.focus_count == 0
+    scheduled[0]()
+    assert search.focus_count == 1
+
+
+def test_compact_safety_stop_targets_only_explicitly_on_air_decks() -> None:
+    window = object.__new__(MainWindow)
+    commands: list[tuple[str, str]] = []
+    window._deck_on_air = {"A": False, "B": True}
+    window._deck_action = lambda deck_id, action: commands.append((deck_id, action))
+
+    MainWindow._stop_on_air_decks(window)
+
+    assert commands == [("B", "stop")]
+
+
+def test_active_analysis_expands_compact_controls_without_starting_domain_work() -> None:
+    window = object.__new__(MainWindow)
+    toggle = ConfigureDouble()
+    window._compact_analysis_expanded = False
+    window._compact_analysis_toggle = toggle
+    window._compact_layout_active = False
+    window._presentation_coordinator = None
+
+    MainWindow._expand_compact_analysis_for_active_job(window)
+
+    assert window._compact_analysis_expanded is True
+    assert toggle.values["text"] == "Analyse ausblenden ▴"
+
+
+def test_active_analysis_disclosure_can_collapse_while_status_remains_separate() -> None:
+    window = object.__new__(MainWindow)
+    toggle = ConfigureDouble()
+    window._compact_analysis_expanded = True
+    window._catalog_analysis_active = True
+    window._loudness_analysis_active = False
+    window._compact_analysis_toggle = toggle
+    window._compact_layout_active = False
+
+    MainWindow._toggle_compact_analysis(window)
+
+    assert window._compact_analysis_expanded is False
+    assert toggle.values["text"] == "Analyse anzeigen ▾"
+
+
+def test_selected_playlist_does_not_replace_explicit_active_source() -> None:
+    window = object.__new__(MainWindow)
+    active_source = "Verzeichnis: Tanzmusik"
+    window._presentation_status = GlobalStatusState(source=active_source)
+    window._sync_playlist_equalizer_menu = lambda: None
+
+    MainWindow._saved_queue_selected(window, "Nur zur Bearbeitung")
+
+    assert window._presentation_status.source == active_source
 
 
 def test_compact_layout_reassertion_hides_deferred_large_workspace_widgets() -> None:

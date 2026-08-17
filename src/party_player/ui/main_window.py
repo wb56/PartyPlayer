@@ -186,6 +186,19 @@ def _compact_live_rows() -> dict[str, int]:
     }
 
 
+def _compact_preparation_rows() -> dict[str, int]:
+    """Reserve the remaining height for the shared scrollable catalog."""
+    return {
+        "live_status": 0,
+        "search": 1,
+        "summary": 2,
+        "catalog": 3,
+        "tools": 4,
+        "progress": 5,
+        "playlist": 6,
+    }
+
+
 def _automatic_help_text() -> str:
     return (
         "CD oder Playlist laden\n"
@@ -1160,6 +1173,10 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._compact_layout_apply_count = 0
         self._compact_widget_tree_creation_count = 0
         self._compact_overlays_expanded = False
+        self._compact_analysis_expanded = False
+        self._compact_playlist_expanded = False
+        self._catalog_analysis_active = False
+        self._loudness_analysis_active = False
         self._presentation_layout_signature: tuple[ResolvedPresentation, Workspace] | None = None
         self._controller: MainController | None = None
         self._system_diagnostic_report: SystemDiagnosticReport | None = None
@@ -1431,7 +1448,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._presentation_mode_button.pack(side="left", padx=3)
         self._global_status_label = ctk.CTkLabel(
             presentation_header,
-            text="A LEER · B LEER · Quelle — · Automatik bereit",
+            text="A LEER · B LEER · Quelle — · Automatik bereit · Übergang 50%",
             text_color=theme.TEXT_MUTED,
             font=(theme.FONT_FAMILY, 11),
             wraplength=720,
@@ -1466,29 +1483,28 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._compact_widget_tree_creation_count = 2
         self._compact_decks_frame.grid_remove()
 
-        self._compact_preparation = ctk.CTkFrame(center, corner_radius=10)
+        self._compact_preparation = ctk.CTkFrame(center, corner_radius=8)
         self._compact_preparation.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(
+        self._compact_preparation_status = ctk.CTkLabel(
             self._compact_preparation,
-            text="Kompakte Vorbereitung folgt in Phase 2C",
-            font=(theme.FONT_FAMILY, 18, "bold"),
-        ).grid(row=0, column=0, padx=20, pady=(28, 6))
-        ctk.CTkLabel(
-            self._compact_preparation,
-            text=(
-                "Katalog und Analyse bleiben unverändert. Für den Live-Betrieb "
-                "bitte LIVE wählen oder für die Vorbereitung die Ansicht GROSS verwenden."
-            ),
+            text="A LEER · B LEER · Quelle — · Automatik bereit · Übergang 50%",
+            anchor="w",
             text_color=theme.TEXT_MUTED,
-            wraplength=700,
-        ).grid(row=1, column=0, padx=20, pady=(0, 12))
-        self._compact_preparation_live_button = ctk.CTkButton(
-            self._compact_preparation,
-            text="Zurück zu LIVE",
-            height=34,
-            command=lambda: self._select_workspace(Workspace.LIVE),
+            font=(theme.FONT_FAMILY, 11),
+            wraplength=760,
         )
-        self._compact_preparation_live_button.grid(row=2, column=0, padx=20, pady=(0, 28))
+        self._compact_preparation_status.grid(row=0, column=0, padx=(8, 4), pady=4, sticky="ew")
+        self._compact_on_air_stop = ctk.CTkButton(
+            self._compact_preparation,
+            text="■ ON AIR stoppen",
+            width=128,
+            height=30,
+            fg_color=theme.DANGER,
+            hover_color=theme.DANGER_HOVER,
+            command=self._stop_on_air_decks,
+        )
+        self._compact_on_air_stop.grid(row=0, column=1, padx=(4, 8), pady=4)
+        self._compact_on_air_stop.grid_remove()
         self._compact_preparation.grid_remove()
         self._summary = ctk.CTkLabel(center, text="Katalog wird geladen …")
         self._summary.grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
@@ -1501,9 +1517,18 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         )
         self._search.grid(row=0, column=0, padx=(0, 6), sticky="ew")
         self._search.bind("<Return>", lambda _event: self._run_search())
-        ctk.CTkButton(search_frame, text="Suchen", width=80, command=self._run_search).grid(
-            row=0, column=1
+        self._catalog_search_button = ctk.CTkButton(
+            search_frame, text="Suchen", width=80, command=self._run_search
         )
+        self._catalog_search_button.grid(row=0, column=1)
+        self._catalog_search_reset_button = ctk.CTkButton(
+            search_frame,
+            text="×",
+            width=34,
+            fg_color=theme.SURFACE_RAISED,
+            command=self._reset_catalog_search,
+        )
+        self._catalog_search_reset_button.grid(row=0, column=2, padx=(4, 0))
         self._catalog_analysis_button = ctk.CTkButton(
             search_frame,
             text="Alle Cues neu",
@@ -1512,7 +1537,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             fg_color="transparent",
             border_width=1,
         )
-        self._catalog_analysis_button.grid(row=0, column=7, padx=(4, 0))
+        self._catalog_analysis_button.grid(row=0, column=8, padx=(4, 0))
         self._catalog_analysis_cancel_button = ctk.CTkButton(
             search_frame,
             text="Analyse abbrechen",
@@ -1521,14 +1546,14 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             command=self._cancel_catalog_analysis,
             state="disabled",
         )
-        self._catalog_analysis_cancel_button.grid(row=0, column=6, padx=(4, 0))
+        self._catalog_analysis_cancel_button.grid(row=0, column=7, padx=(4, 0))
         self._outdated_analysis_button = ctk.CTkButton(
             search_frame,
             text="Neue/veraltete Cues",
             width=150,
             command=self._analyze_outdated_catalog,
         )
-        self._outdated_analysis_button.grid(row=0, column=5, padx=(8, 0))
+        self._outdated_analysis_button.grid(row=0, column=6, padx=(8, 0))
         self._catalog_analysis_was_cancelled = False
         self._loudness_analysis_button = ctk.CTkButton(
             search_frame,
@@ -1538,7 +1563,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             fg_color="transparent",
             border_width=1,
         )
-        self._loudness_analysis_button.grid(row=1, column=7, padx=(4, 0), pady=(4, 0))
+        self._loudness_analysis_button.grid(row=1, column=8, padx=(4, 0), pady=(4, 0))
         self._loudness_analysis_cancel_button = ctk.CTkButton(
             search_frame,
             text="Lautheit abbrechen",
@@ -1547,17 +1572,18 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             command=self._cancel_loudness_analysis,
             state="disabled",
         )
-        self._loudness_analysis_cancel_button.grid(row=1, column=6, padx=(4, 0), pady=(4, 0))
+        self._loudness_analysis_cancel_button.grid(row=1, column=7, padx=(4, 0), pady=(4, 0))
         self._outdated_loudness_button = ctk.CTkButton(
             search_frame,
             text="Neue/veraltete Lautheit",
             width=150,
             command=lambda: self._analyze_loudness_catalog(outdated_only=True),
         )
-        self._outdated_loudness_button.grid(row=1, column=5, padx=(8, 0), pady=(4, 0))
+        self._outdated_loudness_button.grid(row=1, column=6, padx=(8, 0), pady=(4, 0))
         self._loudness_analysis_was_cancelled = False
         catalog_imports = ctk.CTkFrame(search_frame, fg_color="transparent")
-        catalog_imports.grid(row=1, column=0, columnspan=5, sticky="w", pady=(4, 0))
+        self._catalog_imports = catalog_imports
+        catalog_imports.grid(row=1, column=0, columnspan=6, sticky="w", pady=(4, 0))
         catalog_file_button = ctk.CTkButton(
             catalog_imports,
             text="＋ Datei in Katalog",
@@ -1584,13 +1610,63 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._catalog_previous_button = ctk.CTkButton(
             search_frame, text="◀", width=34, command=lambda: self._change_catalog_page(-1)
         )
-        self._catalog_previous_button.grid(row=0, column=2, padx=(10, 3))
+        self._catalog_previous_button.grid(row=0, column=3, padx=(10, 3))
         self._catalog_page_label = ctk.CTkLabel(search_frame, text="Seite 1/1", width=75)
-        self._catalog_page_label.grid(row=0, column=3)
+        self._catalog_page_label.grid(row=0, column=4)
         self._catalog_next_button = ctk.CTkButton(
             search_frame, text="▶", width=34, command=lambda: self._change_catalog_page(1)
         )
-        self._catalog_next_button.grid(row=0, column=4, padx=(3, 0))
+        self._catalog_next_button.grid(row=0, column=5, padx=(3, 0))
+        self._compact_preparation_tools = ctk.CTkFrame(center, fg_color="transparent")
+        self._compact_preparation_tools.grid_columnconfigure(2, weight=1)
+        self._compact_analysis_toggle = ctk.CTkButton(
+            self._compact_preparation_tools,
+            text="Analyse anzeigen ▾",
+            width=142,
+            height=30,
+            fg_color=theme.SURFACE_RAISED,
+            command=self._toggle_compact_analysis,
+        )
+        self._compact_analysis_toggle.grid(row=0, column=0, padx=(0, 4))
+        self._compact_playlist_toggle = ctk.CTkButton(
+            self._compact_preparation_tools,
+            text="Playlist / Quellen anzeigen ▾",
+            width=202,
+            height=30,
+            fg_color=theme.SURFACE_RAISED,
+            command=self._toggle_compact_playlist,
+        )
+        self._compact_playlist_toggle.grid(row=0, column=1, padx=4)
+        self._compact_preparation_live_button = ctk.CTkButton(
+            self._compact_preparation_tools,
+            text="Zurück zu LIVE",
+            width=120,
+            height=30,
+            command=lambda: self._select_workspace(Workspace.LIVE),
+        )
+        self._compact_preparation_live_button.grid(row=0, column=3, padx=(4, 0))
+        self._compact_analysis_active_label = ctk.CTkLabel(
+            self._compact_preparation_tools,
+            text="",
+            anchor="w",
+            text_color=theme.READY,
+        )
+        self._compact_analysis_active_label.grid(
+            row=1, column=0, columnspan=3, padx=(2, 4), pady=(4, 0), sticky="ew"
+        )
+        self._compact_analysis_active_cancel = ctk.CTkButton(
+            self._compact_preparation_tools,
+            text="Analyse abbrechen",
+            width=138,
+            height=28,
+            fg_color=theme.DANGER,
+            hover_color=theme.DANGER_HOVER,
+            command=self._cancel_active_analysis,
+        )
+        self._compact_analysis_active_cancel.grid(row=1, column=3, padx=(4, 0), pady=(4, 0))
+        self._compact_analysis_active_label.grid_remove()
+        self._compact_analysis_active_cancel.grid_remove()
+        self._compact_preparation_tools.grid_remove()
         self._catalog = SmoothScrollableFrame(center, label_text="Katalog")
         self._catalog.grid(row=2, column=0, padx=12, pady=6, sticky="nsew")
         self._catalog.set_scroll_callback(self._catalog_scrolled)
@@ -4202,6 +4278,11 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             "compact_deck_widget_count": (
                 count_widgets(self.compact_deck_a) + count_widgets(self.compact_deck_b)
             ),
+            "compact_preparation_specific_widget_count": (
+                count_widgets(self._compact_preparation)
+                + count_widgets(self._compact_preparation_tools)
+                + 1  # Search reset button added for the compact preparation workflow.
+            ),
             "compact_widget_tree_creation_count": self._compact_widget_tree_creation_count,
             "presentation.layout_applications": self._compact_layout_apply_count,
             "catalog_dirty_rows": self._catalog_dirty_scheduler.pending_count,
@@ -4612,12 +4693,106 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             self._compact_decks_frame,
             self._compact_overlay_frame,
             self._compact_preparation,
+            self._compact_preparation_tools,
         ):
             widget.grid_remove()
 
     def _reset_center_rows(self) -> None:
         for row in range(10):
             self._center_panel.grid_rowconfigure(row, weight=0, minsize=0, uniform="")
+
+    def _configure_catalog_search_layout(self, compact: bool) -> None:
+        """Recompose the existing search/actions tree without creating widgets."""
+        for widget in (
+            self._search,
+            self._catalog_search_button,
+            self._catalog_search_reset_button,
+            self._catalog_previous_button,
+            self._catalog_page_label,
+            self._catalog_next_button,
+            self._catalog_imports,
+            self._outdated_analysis_button,
+            self._catalog_analysis_cancel_button,
+            self._catalog_analysis_button,
+            self._outdated_loudness_button,
+            self._loudness_analysis_cancel_button,
+            self._loudness_analysis_button,
+        ):
+            widget.grid_remove()
+        self._search.grid(row=0, column=0, padx=(0, 6), sticky="ew")
+        self._catalog_search_button.grid(row=0, column=1)
+        self._catalog_search_reset_button.grid(row=0, column=2, padx=(4, 0))
+        self._catalog_previous_button.grid(row=0, column=3, padx=(10, 3))
+        self._catalog_page_label.grid(row=0, column=4)
+        self._catalog_next_button.grid(row=0, column=5, padx=(3, 0))
+        self._catalog_imports.grid(row=1, column=0, columnspan=6, sticky="w", pady=(4, 0))
+        if not compact or self._compact_analysis_expanded:
+            cue_row, loudness_row = (2, 3) if compact else (0, 1)
+            first_column = 0 if compact else 6
+            first_pad = (0, 4) if compact else (8, 0)
+            cue_pady = (4, 0) if compact else 0
+            self._outdated_analysis_button.grid(
+                row=cue_row, column=first_column, padx=first_pad, pady=cue_pady
+            )
+            self._catalog_analysis_cancel_button.grid(
+                row=cue_row, column=first_column + 1, padx=(4, 0), pady=cue_pady
+            )
+            self._catalog_analysis_button.grid(
+                row=cue_row, column=first_column + 2, padx=(4, 0), pady=cue_pady
+            )
+            self._outdated_loudness_button.grid(
+                row=loudness_row,
+                column=first_column,
+                padx=first_pad,
+                pady=(4, 0),
+            )
+            self._loudness_analysis_cancel_button.grid(
+                row=loudness_row,
+                column=first_column + 1,
+                padx=(4, 0),
+                pady=(4, 0),
+            )
+            self._loudness_analysis_button.grid(
+                row=loudness_row,
+                column=first_column + 2,
+                padx=(4, 0),
+                pady=(4, 0),
+            )
+
+    def _toggle_compact_analysis(self) -> None:
+        self._compact_analysis_expanded = not self._compact_analysis_expanded
+        self._compact_analysis_toggle.configure(
+            text=(
+                "Analyse ausblenden ▴" if self._compact_analysis_expanded else "Analyse anzeigen ▾"
+            )
+        )
+        if self._compact_layout_active:
+            self._configure_catalog_search_layout(True)
+
+    def _toggle_compact_playlist(self) -> None:
+        self._compact_playlist_expanded = not self._compact_playlist_expanded
+        self._compact_playlist_toggle.configure(
+            text=(
+                "Playlist / Quellen ausblenden ▴"
+                if self._compact_playlist_expanded
+                else "Playlist / Quellen anzeigen ▾"
+            )
+        )
+        if not self._compact_layout_active:
+            return
+        coordinator = self._presentation_coordinator
+        if coordinator is None or coordinator.state.workspace is not Workspace.PREPARATION:
+            return
+        if self._compact_playlist_expanded:
+            self._saved_toolbar.grid(
+                row=_compact_preparation_rows()["playlist"],
+                column=0,
+                padx=8,
+                pady=(0, 4),
+                sticky="ew",
+            )
+        else:
+            self._saved_toolbar.grid_remove()
 
     def _show_large_layout(self) -> None:
         self._compact_layout_active = False
@@ -4636,6 +4811,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         )
         self._hide_center_content()
         self._reset_center_rows()
+        self._configure_catalog_search_layout(False)
         self.deck_a.grid(row=1, column=0, padx=(16, 8), pady=8, sticky="nsew")
         self.deck_b.grid(row=1, column=2, padx=(8, 16), pady=8, sticky="nsew")
         self._center_panel.grid(**_center_panel_grid_options(False))
@@ -4683,8 +4859,26 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             self._mixer_container.grid(**_mixer_container_grid_options(True))
         self._center_panel.grid(**_center_panel_grid_options(True))
         if workspace is Workspace.PREPARATION:
-            self._center_panel.grid_rowconfigure(0, weight=1)
-            self._compact_preparation.grid(row=0, column=0, padx=8, pady=8, sticky="nsew")
+            rows = _compact_preparation_rows()
+            self._configure_catalog_search_layout(True)
+            self._center_panel.grid_rowconfigure(rows["catalog"], weight=1, minsize=120)
+            self._compact_preparation.grid(
+                row=rows["live_status"], column=0, padx=8, pady=(6, 2), sticky="ew"
+            )
+            self._search_frame.grid(row=rows["search"], column=0, padx=8, pady=2, sticky="ew")
+            self._summary.grid(row=rows["summary"], column=0, padx=10, pady=(1, 0), sticky="w")
+            self._catalog.grid(row=rows["catalog"], column=0, padx=8, pady=3, sticky="nsew")
+            self._compact_preparation_tools.grid(
+                row=rows["tools"], column=0, padx=8, pady=(2, 4), sticky="ew"
+            )
+            if self._directory_progress_visible:
+                self._directory_progress_frame.grid(
+                    row=rows["progress"], column=0, padx=8, pady=(0, 3), sticky="ew"
+                )
+            if self._compact_playlist_expanded:
+                self._saved_toolbar.grid(
+                    row=rows["playlist"], column=0, padx=8, pady=(0, 4), sticky="ew"
+                )
             return
         rows = _compact_live_rows()
         self._compact_decks_frame.grid(
@@ -4733,7 +4927,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         if selected is Workspace.LIVE:
             target = self._automatic_queue_button
         elif self.__dict__.get("_compact_layout_active", False):
-            target = self._compact_preparation_live_button
+            target = self._search
         else:
             target = self._search
         target.focus_set()
@@ -4762,10 +4956,10 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             if self._presentation_coordinator.state.resolved is ResolvedPresentation.COMPACT:
                 resolved_note = " · KOMPAKT"
         status = self._presentation_status
-        self._global_status_label.configure(
-            text=global_status_text(status, resolved_note),
-            text_color=theme.WARNING if status.warning else theme.TEXT_MUTED,
-        )
+        text = global_status_text(status, resolved_note)
+        color = theme.WARNING if status.warning else theme.TEXT_MUTED
+        self._global_status_label.configure(text=text, text_color=color)
+        self._compact_preparation_status.configure(text=text, text_color=color)
 
     def _schedule_cursor_restore(self) -> None:
         """Restore the pointer after Windows leaves its native move/resize loop."""
@@ -4786,6 +4980,15 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._cursor_restore_after_id = str(self.schedule(120, restore_window_cursor))
 
     def _focus_search(self) -> None:
+        coordinator = self._presentation_coordinator
+        if (
+            coordinator is not None
+            and coordinator.state.resolved is ResolvedPresentation.COMPACT
+            and coordinator.state.workspace is not Workspace.PREPARATION
+        ):
+            self._select_workspace(Workspace.PREPARATION)
+            self.schedule(0, self._search.focus_set)
+            return
         self._search.focus_set()
 
     def show_overlay_status(self, runtime: OverlayRuntime) -> None:
@@ -5756,7 +5959,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             status_color = theme.TEXT_MUTED
         self._presentation_status = replace(
             self._presentation_status,
-            **{f"deck_{deck.deck_id.casefold()}": status_text.upper()},
+            **{f"deck_{deck.deck_id.casefold()}": compact_deck_presentation(deck).state},
         )
         self._render_global_status()
         if force_live_for_operational_update(
@@ -5772,6 +5975,10 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             )
             self._deck_status_cache[deck.deck_id] = deck_status
         active = [deck_id for deck_id in ("A", "B") if self._deck_on_air[deck_id]]
+        if active:
+            self._compact_on_air_stop.grid()
+        else:
+            self._compact_on_air_stop.grid_remove()
         label = " + ".join(active) if active else "KEINES"
         summary = (
             f"ON AIR: {label}",
@@ -5859,6 +6066,10 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._updating_mixer = True
         self._crossfader.set(crossfader)
         self._crossfader_label.configure(text=f"Crossfader · {percent}%")
+        self._presentation_status = replace(
+            self._presentation_status, transition=f"Übergang {percent}%"
+        )
+        self._render_global_status()
         self._mixer_render_cache["crossfade_percent"] = percent
         self._updating_mixer = False
 
@@ -5954,8 +6165,17 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             return
         self._directory_progress_visible = True
         if self._compact_layout_active:
+            workspace = (
+                self._presentation_coordinator.state.workspace
+                if self._presentation_coordinator is not None
+                else Workspace.LIVE
+            )
             self._directory_progress_frame.grid(
-                row=_compact_live_rows()["directory_progress"],
+                row=(
+                    _compact_preparation_rows()["progress"]
+                    if workspace is Workspace.PREPARATION
+                    else _compact_live_rows()["directory_progress"]
+                ),
                 column=0,
                 padx=8,
                 pady=1,
@@ -6174,6 +6394,10 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         if self._controller is not None:
             self._controller.search(self._search.get())
 
+    def _reset_catalog_search(self) -> None:
+        self._search.delete(0, "end")
+        self._run_search()
+
     def _change_catalog_page(self, direction: int) -> None:
         if self._controller is not None:
             self._controller.change_catalog_page(direction)
@@ -6181,6 +6405,12 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
     def _deck_action(self, deck_id: str, action: str) -> None:
         if self._controller is not None:
             self._controller.deck_action(deck_id, action)
+
+    def _stop_on_air_decks(self) -> None:
+        """Delegate the compact safety action for explicitly on-air decks."""
+        for deck_id in ("A", "B"):
+            if self._deck_on_air.get(deck_id, False):
+                self._deck_action(deck_id, "stop")
 
     def _load_catalog(self, track_id: int, deck_id: str) -> None:
         if self._controller is not None:
@@ -6584,7 +6814,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         callback()
 
     def _toggle_saved_toolbar(self) -> None:
-        if self._saved_toolbar.winfo_ismapped():
+        if self._saved_toolbar_visible:
             self._saved_toolbar_visible = False
             self._saved_toolbar.grid_remove()
         else:
@@ -6677,6 +6907,9 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             return
         try:
             self._catalog_analysis_was_cancelled = False
+            self._catalog_analysis_active = True
+            self._expand_compact_analysis_for_active_job()
+            self._show_compact_active_analysis("Cue-Analyse wird gestartet …")
             self._catalog_analysis_button.configure(state="disabled")
             self._outdated_analysis_button.configure(state="disabled")
             self._catalog_analysis_cancel_button.configure(state="normal")
@@ -6685,6 +6918,9 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
                 self._show_catalog_analysis_completed,
             )
         except (ValueError, RuntimeError) as exc:
+            self._catalog_analysis_active = False
+            self._refresh_compact_analysis_toggle_state()
+            self._hide_compact_active_analysis_if_complete()
             self._catalog_analysis_button.configure(state="normal")
             self._outdated_analysis_button.configure(state="normal")
             self._catalog_analysis_cancel_button.configure(state="disabled")
@@ -6697,12 +6933,16 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._cue_controller.cancel_batch_analysis()
         self._catalog_analysis_cancel_button.configure(state="disabled")
         self._summary.configure(text="Cue-Analyse: Abbruch angefordert …")
+        self._show_compact_active_analysis("Cue-Analyse: Abbruch angefordert …")
 
     def _analyze_outdated_catalog(self) -> None:
         if self._cue_controller is None:
             return
         try:
             self._catalog_analysis_was_cancelled = False
+            self._catalog_analysis_active = True
+            self._expand_compact_analysis_for_active_job()
+            self._show_compact_active_analysis("Cue-Analyse wird gestartet …")
             self._catalog_analysis_button.configure(state="disabled")
             self._outdated_analysis_button.configure(state="disabled")
             self._catalog_analysis_cancel_button.configure(state="normal")
@@ -6711,6 +6951,9 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
                 self._show_catalog_analysis_completed,
             )
         except (ValueError, RuntimeError) as exc:
+            self._catalog_analysis_active = False
+            self._refresh_compact_analysis_toggle_state()
+            self._hide_compact_active_analysis_if_complete()
             self._catalog_analysis_button.configure(state="normal")
             self._outdated_analysis_button.configure(state="normal")
             self._catalog_analysis_cancel_button.configure(state="disabled")
@@ -6719,14 +6962,12 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
     def _show_catalog_analysis_progress(
         self, processed: int, total: int, succeeded: int, failed: int
     ) -> None:
-        self._summary.configure(
-            text=(
-                f"Cue-Analyse: {processed}/{total} · "
-                f"Erfolgreich: {succeeded} · Fehler: {failed}"
-            )
-        )
+        text = f"Cue-Analyse: {processed}/{total} · " f"Erfolgreich: {succeeded} · Fehler: {failed}"
+        self._summary.configure(text=text)
+        self._show_compact_active_analysis(text)
 
     def _show_catalog_analysis_completed(self, succeeded: int, failed: int) -> None:
+        self._catalog_analysis_active = False
         state = "abgebrochen" if self._catalog_analysis_was_cancelled else "abgeschlossen"
         self._summary.configure(
             text=f"Cue-Analyse {state} · Erfolgreich: {succeeded} · Fehler: {failed}"
@@ -6734,6 +6975,8 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._catalog_analysis_button.configure(state="normal")
         self._outdated_analysis_button.configure(state="normal")
         self._catalog_analysis_cancel_button.configure(state="disabled")
+        self._refresh_compact_analysis_toggle_state()
+        self._hide_compact_active_analysis_if_complete()
 
     def _analyze_loudness_catalog(self, *, outdated_only: bool = False) -> None:
         if self._loudness_controller is None:
@@ -6749,6 +6992,9 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             return
         try:
             self._loudness_analysis_was_cancelled = False
+            self._loudness_analysis_active = True
+            self._expand_compact_analysis_for_active_job()
+            self._show_compact_active_analysis("Lautheitsanalyse wird gestartet …")
             self._loudness_analysis_button.configure(state="disabled")
             self._outdated_loudness_button.configure(state="disabled")
             self._loudness_analysis_cancel_button.configure(state="normal")
@@ -6758,6 +7004,9 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
                 outdated_only=outdated_only,
             )
         except (ValueError, RuntimeError) as exc:
+            self._loudness_analysis_active = False
+            self._refresh_compact_analysis_toggle_state()
+            self._hide_compact_active_analysis_if_complete()
             self._loudness_analysis_button.configure(state="normal")
             self._outdated_loudness_button.configure(state="normal")
             self._loudness_analysis_cancel_button.configure(state="disabled")
@@ -6770,18 +7019,20 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._loudness_controller.cancel_batch_analysis()
         self._loudness_analysis_cancel_button.configure(state="disabled")
         self._summary.configure(text="Lautheitsanalyse: Abbruch angefordert …")
+        self._show_compact_active_analysis("Lautheitsanalyse: Abbruch angefordert …")
 
     def _show_loudness_analysis_progress(
         self, processed: int, total: int, succeeded: int, failed: int
     ) -> None:
-        self._summary.configure(
-            text=(
-                f"Lautheitsanalyse: {processed}/{total} · "
-                f"Erfolgreich: {succeeded} · Fehler: {failed}"
-            )
+        text = (
+            f"Lautheitsanalyse: {processed}/{total} · "
+            f"Erfolgreich: {succeeded} · Fehler: {failed}"
         )
+        self._summary.configure(text=text)
+        self._show_compact_active_analysis(text)
 
     def _show_loudness_analysis_completed(self, succeeded: int, failed: int) -> None:
+        self._loudness_analysis_active = False
         state = "abgebrochen" if self._loudness_analysis_was_cancelled else "abgeschlossen"
         self._summary.configure(
             text=f"Lautheitsanalyse {state} · Erfolgreich: {succeeded} · Fehler: {failed}"
@@ -6789,6 +7040,42 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._loudness_analysis_button.configure(state="normal")
         self._outdated_loudness_button.configure(state="normal")
         self._loudness_analysis_cancel_button.configure(state="disabled")
+        self._refresh_compact_analysis_toggle_state()
+        self._hide_compact_active_analysis_if_complete()
+
+    def _expand_compact_analysis_for_active_job(self) -> None:
+        """Keep active progress and cancellation reachable without starting work."""
+        if self._compact_analysis_expanded:
+            return
+        self._compact_analysis_expanded = True
+        self._compact_analysis_toggle.configure(text="Analyse ausblenden ▴")
+        coordinator = self._presentation_coordinator
+        if (
+            self._compact_layout_active
+            and coordinator is not None
+            and coordinator.state.workspace is Workspace.PREPARATION
+        ):
+            self._configure_catalog_search_layout(True)
+
+    def _refresh_compact_analysis_toggle_state(self) -> None:
+        self._compact_analysis_toggle.configure(state="normal")
+
+    def _show_compact_active_analysis(self, text: str) -> None:
+        self._compact_analysis_active_label.configure(text=text)
+        self._compact_analysis_active_label.grid()
+        self._compact_analysis_active_cancel.grid()
+
+    def _hide_compact_active_analysis_if_complete(self) -> None:
+        if self._catalog_analysis_active or self._loudness_analysis_active:
+            return
+        self._compact_analysis_active_label.grid_remove()
+        self._compact_analysis_active_cancel.grid_remove()
+
+    def _cancel_active_analysis(self) -> None:
+        if self._catalog_analysis_active:
+            self._cancel_catalog_analysis()
+        if self._loudness_analysis_active:
+            self._cancel_loudness_analysis()
 
     def _save_current_queue(self) -> None:
         if self._controller is None:

@@ -444,6 +444,118 @@ changes.
 
 No new dependency or license change was introduced.
 
+## Phase 2C compact Preparation implementation
+
+Phase 2C replaces the compact Preparation placeholder with a production catalog and
+preparation composition. It re-grids the existing search, paging, import, analysis,
+catalog and saved-playlist widgets; no catalog query, controller command or widget-tree
+rebuild is issued by a presentation or workspace change. The existing bounded catalog
+row pool remains the only catalog view and therefore retains its bound rows and local
+scroll position while it is hidden.
+
+The compact composition places the explicit live-status projection first, including
+both deck states, active queue source, automation, transition and promoted warning
+state. A direct Stop action is shown only while one or both decks are explicitly on
+air and delegates to the existing deck Stop commands. Search, reset and paging remain
+directly reachable. Import actions stay on the next row. Analysis and saved-playlist
+preparation use independent local disclosures whose state survives workspace and
+presentation changes. An active analysis opens its disclosure and also renders a
+separate compact progress/cancel row. The disclosure remains closable while this
+active row keeps progress and cancellation visible, without adding a subscription,
+timer or worker-thread GUI access.
+
+Playlist selection remains preparation state only. The live-status source continues
+to change exclusively through the existing active queue-origin update, so opening a
+playlist for editing cannot present it as the active playback source. Ctrl+F changes
+from Compact Live to Compact Preparation before focusing the existing search entry.
+Large presentation restores the existing simultaneous catalog/queue composition.
+
+### Phase 2C lifecycle and performance evidence
+
+The structural audit adds six fixed widgets compared with the Phase 2B-2a tree: a
+search-reset button, the net replacement of the placeholder with the compact live
+strip and three-button preparation toolbar, plus the active-analysis status and cancel
+controls. No tooltip, periodic timer, subscription
+or catalog row is added. Diagnostics now expose
+`compact_preparation_specific_widget_count` alongside the existing total-widget,
+tooltip, row-pool, creation and layout-application gauges.
+
+The automated empty-window probe could not be executed in the agent process because
+that Windows execution identity could not initialize the locally installed Tcl/Tk
+runtime, even with explicit library paths and a temporary readable copy. A real
+interactive before/after diagnostic measurement therefore remains part of the manual
+Windows acceptance; no runtime widget or heartbeat value is inferred from the static
+audit.
+
+The later approved unsandboxed Tk probe succeeded. Before and after ten complete
+Preparation/Live/Preparation round trips, total Tk widgets remained 744/744,
+`compact_preparation_specific_widget_count` remained 22/22 and current Tooltip
+instances remained 36/36. Presentation layout applications advanced exactly from 1
+to 21 (one application per workspace change), while policy evaluations stayed at 1
+and resize events at 0. The ten round trips took 7.081–8.758 ms in the first gauge
+run (7.894 ms mean). In the heartbeat run the first five round trips averaged 9.270 ms
+and the last five 8.562 ms, so no increasing delay was observed. Published heartbeat
+gaps were at most 16 ms; afterward there was no active GUI callback and no pending
+layout refresh, Catalog chunk or Queue chunk. The hidden probe retained one pending
+focus request because an intentionally withdrawn window cannot accept real keyboard
+focus; this is a probe artifact rather than accumulating layout work.
+
+### Phase 2C Windows acceptance matrix
+
+| Target environment | Phase 2C result |
+| --- | --- |
+| 1920 x 1080 at 100% | Passed: Large retained the three-column presentation with Catalog and Queue visible together, both decks fully operable and no unexpected hidden regions or visible regression. Live/Preparation changed only the working focus, and Ctrl+F focused Catalog search. |
+| 1920 x 1080 at 125% | Passed: Compact Preparation kept the complete live strip, both deck states, on-air identity, active source, automation/transition status, search/reset, paging, import, Analysis and Playlist/Source disclosures, usable Catalog height and direct return to Live reachable without clipping or horizontal scrolling. |
+| 1366 x 768 at 125% | Passed after regression fix: title and global status remained visible; search/reset, paging and imports fit; the locally scrollable Catalog retained usable rows; Analysis and Playlist/Source disclosures opened and closed without permanently displacing essential actions; no global scrolling, overlap or clipped primary action was observed; return to Live remained reachable. |
+
+The practical matrix must also cover playback and automation during search, an active
+analysis and cancellation, long titles and source names, a playlist selected for
+editing while Directory or Queue remains the active source, repeated workspace and
+presentation changes, and maximize/restore. No new dependency or license change was
+introduced.
+
+The cross-workspace state-preservation scenario passed in Compact presentation. With
+Directory or Queue playback active, selecting a Playlist only for editing left the
+active source unchanged. Search text, Catalog page, selection and local scroll position
+survived Live/Preparation round trips. Large/Compact and maximize/restore changes did
+not issue a new search, player command or Queue action.
+
+A subsequent Compact Live check found that the first Queue row could not open its
+extended-actions menu after an event-driven status update, while menus on later rows
+could be displayed but were not reliably actionable. `QueueRowView` had incorrectly
+treated its invalidated render cache as evidence that no entry was bound. Menu
+eligibility now uses the stable entry id and explicit row fields, and each bounded row
+retains at most one active menu until replacement or disposal. A regression test
+executes a menu command after a live status update. The practical menu recheck passed.
+The same review exposed that skipped entries had no generic UI path back to Waiting,
+although the existing Queue transition and retry command already support it. Their
+menu now offers `Wieder auf wartend setzen`; repetition-protection skips additionally
+retain `Trotzdem abspielen` for the explicit rule override.
+
+During the 1366 x 768 run, pressing the Catalog row action `B` stopped automatic
+operation and a later restart reported an empty Queue. This is the established manual
+deck-load behavior: `B` loads the Catalog title directly into Deck B, which the
+controller records as a manual override and therefore ends automatic operation. With
+no waiting Queue entry, restart is correctly rejected. The `+` row action is the
+non-overriding path for adding a Catalog title to the Queue; the finding was not caused
+by scrolling, workspace switching or compact layout.
+
+Two findings were recorded during the 1920 x 1080 at 125% run. A transient silent
+output report could not be reproduced; Deck B subsequently reported On Air and output
+remained audible, so no audio/player change was made as presentation work. The
+Database and Backup dialog exceeded the available height without a local scrollbar;
+that dialog migration remains in the explicitly excluded Phase 2B-2b scope and does
+not change the Phase 2C workspace acceptance.
+
+### Phase 2C automated quality evidence
+
+The focused presentation, catalog-row, coordinator, controller, dispatcher,
+dirty-row and heartbeat run passed 244 tests. The final repository checks passed Ruff,
+Black for all 270 Python files and MyPy for 145 source files. The complete test suite
+ran with the existing local FFmpeg 8.1.2 `bin` directory prepended to `PATH` and
+completed with 1171 passed and zero skipped tests. The three real MP3, FLAC and VBR-MP3
+FFmpeg/FFprobe cases therefore executed rather than skipping.
+
 ### Formatter diagnostic
 
 After an initially non-terminating Black run, `main_window.py` was checked in

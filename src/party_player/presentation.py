@@ -28,6 +28,7 @@ class GlobalStatusState:
     deck_a: str = "LEER"
     deck_b: str = "LEER"
     automatic: str = "Automatik bereit"
+    transition: str = "Übergang 50%"
     warning: str = ""
 
 
@@ -35,7 +36,7 @@ def global_status_text(state: GlobalStatusState, resolved_note: str = "") -> str
     warning = f" · ⚠ {state.warning}" if state.warning else ""
     return (
         f"A {state.deck_a} · B {state.deck_b} · Quelle {state.source} · "
-        f"{state.automatic}{warning}{resolved_note}"
+        f"{state.automatic} · {state.transition}{warning}{resolved_note}"
     )
 
 

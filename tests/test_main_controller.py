@@ -1488,6 +1488,23 @@ def test_played_queue_track_cannot_be_loaded_into_deck(tmp_path: Path) -> None:
     assert "zuerst wieder auf wartend setzen" in view.queue_warnings[-1]
 
 
+def test_played_queue_track_can_be_reset_and_loaded_into_deck(tmp_path: Path) -> None:
+    controller, _view = build_controller(tmp_path)
+    controller.initialize()
+    entry = controller._queue_service.add(1)
+    controller._queue_service.mark_played(entry.queue_id)
+
+    controller.reset_played_queue_track(entry.queue_id)
+    controller.load_queue_track(entry.queue_id, "B")
+
+    assert controller.deck_b.model.loaded_track is not None
+    assert controller.deck_b.model.loaded_track.id == 1
+    restored = controller._queue_service.entry(entry.queue_id)
+    assert restored is not None
+    assert restored.status == QueueStatus.READY
+    assert restored.loaded_deck == "B"
+
+
 def test_manual_load_applies_gain_before_first_playback_sample(tmp_path: Path) -> None:
     controller, _view = build_controller(tmp_path, replaygain_db=-6.0)
     controller.initialize()
@@ -3379,6 +3396,32 @@ def test_automatic_queue_starts_and_begins_crossfade_near_track_end(tmp_path: Pa
 
     assert controller.deck_b.model.state.value == "playing"
     assert controller.player_mode.value == "automatic"
+
+
+def test_automatic_start_ignores_first_skipped_entry_and_loads_next_waiting_track(
+    tmp_path: Path,
+) -> None:
+    controller, _view = build_controller(tmp_path, track_count=2)
+    controller.initialize()
+    controller.set_automatic_deck_loading(False)
+    controller.add_catalog_track_to_queue(1)
+    controller.add_catalog_track_to_queue(2)
+    first, second = controller._queue_service.entries()
+    controller.mark_queue_track_skipped(first.queue_id, "Operator")
+
+    controller.start_automatic_queue()
+
+    skipped = controller._queue_service.entry(first.queue_id)
+    next_entry = controller._queue_service.entry(second.queue_id)
+    assert skipped is not None and skipped.status == QueueStatus.SKIPPED
+    assert next_entry is not None and next_entry.status in {
+        QueueStatus.READY,
+        QueueStatus.PLAYING,
+    }
+    assert any(
+        deck.model.loaded_track is not None and deck.model.loaded_track.id == 2
+        for deck in (controller.deck_a, controller.deck_b)
+    )
 
 
 def test_changed_future_cue_out_reschedules_automatic_transition(tmp_path: Path) -> None:

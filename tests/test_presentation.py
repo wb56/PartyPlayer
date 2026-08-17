@@ -80,7 +80,8 @@ def test_global_status_is_rendered_from_explicit_state() -> None:
         warning="Audioausgabe prüfen",
     )
     assert global_status_text(state) == (
-        "A ON AIR · B BEREIT · Quelle Playlist · Automatik aktiv" " · ⚠ Audioausgabe prüfen"
+        "A ON AIR · B BEREIT · Quelle Playlist · Automatik aktiv · Übergang 50%"
+        " · ⚠ Audioausgabe prüfen"
     )
 
 
