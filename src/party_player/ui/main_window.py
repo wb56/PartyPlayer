@@ -4832,7 +4832,9 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         for deck_id, deck in self._latest_decks.items():
             (self.deck_a if deck_id == "A" else self.deck_b).render(deck)
 
-    def _show_compact_layout(self, workspace: Workspace) -> None:
+    def _show_compact_layout(
+        self, workspace: Workspace, *, schedule_reassertion: bool = True
+    ) -> None:
         self._compact_layout_active = True
         self.grid_columnconfigure(0, weight=0, uniform="")
         self.grid_columnconfigure(1, weight=1, uniform="")
@@ -4851,7 +4853,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._reset_center_rows()
         self.deck_a.grid_remove()
         self.deck_b.grid_remove()
-        if workspace is Workspace.LIVE and not _compact_mixer_visible(
+        if workspace is Workspace.PREPARATION or not _compact_mixer_visible(
             self._compact_overlays_expanded
         ):
             self._mixer_container.grid_remove()
@@ -4879,6 +4881,9 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
                 self._saved_toolbar.grid(
                     row=rows["playlist"], column=0, padx=8, pady=(0, 4), sticky="ew"
                 )
+            if schedule_reassertion:
+                self.schedule(50, self._ensure_compact_layout_exclusive)
+                self.schedule(250, self._ensure_compact_layout_exclusive)
             return
         rows = _compact_live_rows()
         self._compact_decks_frame.grid(
@@ -4907,20 +4912,22 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         # Startup catalog/queue population can finish after the first presentation
         # decision. Reassert the mutually exclusive compact tree after those idle
         # callbacks without touching any domain state.
-        self.schedule(50, self._ensure_compact_layout_exclusive)
-        self.schedule(250, self._ensure_compact_layout_exclusive)
+        if schedule_reassertion:
+            self.schedule(50, self._ensure_compact_layout_exclusive)
+            self.schedule(250, self._ensure_compact_layout_exclusive)
 
     def _ensure_compact_layout_exclusive(self) -> None:
-        if not self._compact_layout_active:
-            return
-        for widget in (
-            self._summary,
-            self._search_frame,
-            self._catalog,
-            self._workspace_splitter,
-            self._saved_toolbar,
+        coordinator = self._presentation_coordinator
+        if (
+            not self._compact_layout_active
+            or coordinator is None
+            or coordinator.state.resolved is not ResolvedPresentation.COMPACT
         ):
-            widget.grid_remove()
+            return
+        self._show_compact_layout(
+            coordinator.state.workspace,
+            schedule_reassertion=False,
+        )
 
     def _focus_workspace(self, selected: Workspace) -> None:
         """Move keyboard focus without changing selection or domain state."""

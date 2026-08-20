@@ -221,21 +221,27 @@ def test_selected_playlist_does_not_replace_explicit_active_source() -> None:
     assert window._presentation_status.source == active_source
 
 
-def test_compact_layout_reassertion_hides_deferred_large_workspace_widgets() -> None:
+def test_compact_layout_reassertion_uses_current_workspace_not_stale_callback_state() -> None:
     window = object.__new__(MainWindow)
     window._compact_layout_active = True
-    widgets = [RemovableGridDouble() for _ in range(5)]
-    (
-        window._summary,
-        window._search_frame,
-        window._catalog,
-        window._workspace_splitter,
-        window._saved_toolbar,
-    ) = widgets
+    window._presentation_coordinator = type(
+        "Coordinator",
+        (),
+        {
+            "state": PresentationState(
+                resolved=ResolvedPresentation.COMPACT,
+                workspace=Workspace.PREPARATION,
+            )
+        },
+    )()
+    applications: list[tuple[Workspace, bool]] = []
+    window._show_compact_layout = lambda workspace, schedule_reassertion: applications.append(
+        (workspace, schedule_reassertion)
+    )
 
     MainWindow._ensure_compact_layout_exclusive(window)
 
-    assert [widget.remove_count for widget in widgets] == [1, 1, 1, 1, 1]
+    assert applications == [(Workspace.PREPARATION, False)]
 
 
 def test_diagnostic_disclosure_label_matches_expanded_state() -> None:
