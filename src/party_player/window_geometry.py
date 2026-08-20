@@ -251,6 +251,38 @@ def resolve_window_geometry(
     )
 
 
+def resolve_child_window_geometry(
+    parent: StoredWindowGeometry,
+    snapshot: DisplaySnapshot,
+    *,
+    preferred_size: tuple[int, int],
+    standard_minimum: tuple[int, int],
+) -> ResolvedWindowGeometry:
+    """Center a child on its parent's monitor and clamp it to that work area."""
+    parent_index = _monitor_index_for_geometry(parent, snapshot)
+    if parent_index is None:
+        parent_index = snapshot.monitors.index(snapshot.primary)
+    monitor = snapshot.monitors[parent_index]
+    scale = monitor.dpi_scale if math.isfinite(monitor.dpi_scale) and monitor.dpi_scale > 0 else 1.0
+    width, height = preferred_size
+    parent_rect = _physical_window_rect(parent, snapshot.insets)
+    outer_width = round(width * scale) + snapshot.insets.horizontal
+    outer_height = round(height * scale) + snapshot.insets.vertical
+    centered = StoredWindowGeometry(
+        width,
+        height,
+        round((parent_rect.left + parent_rect.right - outer_width) / 2),
+        round((parent_rect.top + parent_rect.bottom - outer_height) / 2),
+        scale,
+    )
+    return resolve_window_geometry(
+        centered.serialize(),
+        snapshot,
+        preferred_size=preferred_size,
+        standard_minimum=standard_minimum,
+    )
+
+
 class _WinRect(ctypes.Structure):
     _fields_ = [
         ("left", wintypes.LONG),

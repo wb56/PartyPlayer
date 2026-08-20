@@ -46,6 +46,9 @@ class _DialogDouble:
     def grab_release(self) -> None:
         self.grab_released = True
 
+    def grab_current(self) -> object:
+        return self
+
     def destroy(self) -> None:
         self.destroyed = True
 

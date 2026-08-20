@@ -8,6 +8,11 @@ from tkinter import TclError
 from typing import Any, Literal
 
 import customtkinter as ctk  # type: ignore[import-untyped]
+from party_player.ui.responsive_dialog import (
+    apply_responsive_dialog_geometry,
+    bind_dialog_escape,
+    release_dialog,
+)
 
 from party_player.analysis.loudness_service import LoudnessAnalysisJob
 from party_player.controllers.cue_point_controller import CuePointController, CuePointEditorState
@@ -327,13 +332,18 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
         self._build_after_id: str | None = None
         self._lazy_tabs_built: set[str] = {"Cue"}
         self.title("Titel bearbeiten")
-        self.geometry("780x760")
-        self.minsize(720, 680)
+        apply_responsive_dialog_geometry(
+            self, parent, preferred_size=(780, 760), minimum_size=(620, 460)
+        )
         self.transient(parent)
         self.protocol("WM_DELETE_WINDOW", self._cancel)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
+        self._editor_content = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self._editor_content.grid(row=1, column=0, sticky="nsew")
+        self._editor_content.grid_columnconfigure(0, weight=1)
         self.grab_set()
+        bind_dialog_escape(self, self._cancel)
         self._build_steps: list[Callable[[], None]] = [
             self._build_header,
             self._build_tab_container,
@@ -354,7 +364,7 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
 
     def _build_header(self) -> None:
         state = self._view_model.cue
-        header = ctk.CTkFrame(self, fg_color="transparent")
+        header = ctk.CTkFrame(self._editor_content, fg_color="transparent")
         header.grid(row=0, column=0, padx=20, pady=(18, 8), sticky="ew")
         ctk.CTkLabel(header, text=state.title, font=("Segoe UI", 18, "bold")).pack(anchor="w")
         album = self._view_model.album or "Album nicht angegeben"
@@ -373,8 +383,8 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
         self._path_tooltip = Tooltip(path_label, self._view_model.file_path)
 
     def _build_tab_container(self) -> None:
-        self._tabs = ctk.CTkTabview(self, command=self._tab_changed)
-        self._tabs.grid(row=1, column=0, padx=16, pady=(0, 8), sticky="nsew")
+        self._tabs = ctk.CTkTabview(self._editor_content, command=self._tab_changed, height=560)
+        self._tabs.grid(row=1, column=0, padx=16, pady=(0, 8), sticky="ew")
 
     def _build_cue_fields(self) -> None:
         state = self._view_model.cue
@@ -752,10 +762,7 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
             path_tooltip.close()
             self._path_tooltip = None
         self._editor_controller.record_event("track_editor.close")
-        try:
-            self.grab_release()
-        except (RuntimeError, TclError):
-            pass
+        release_dialog(self)
         self.destroy()
         if self._on_closed is not None:
             self._on_closed()

@@ -444,6 +444,49 @@ changes.
 
 No new dependency or license change was introduced.
 
+## Phase 2B-2b responsive dialogs
+
+Phase 2B-2b adds a shared dialog foundation that resolves each dialog against the
+existing `window_geometry` work-area model. Dialogs are centered on the monitor of
+their parent, DPI-scaled dimensions are clamped to the real Windows work area, and
+minimum sizes adapt when the target work area is smaller than the preferred size.
+The foundation also provides consistent Escape handling and defensive modal-grab
+release without adding a dependency or changing domain behavior.
+
+The Database/Backup dialog, Track Editor and System Diagnostics now keep their primary
+actions in a fixed footer while long content remains locally scrollable. External
+Programs and First-run Setup use the same pattern. Overlay Management already had
+local list and form scrolling and now uses the shared placement and Escape behavior.
+The embedded Equalizer editor was deliberately left unchanged because adapting that
+anonymous MainWindow-owned dialog would require a larger extraction beyond this
+bounded dialog pass.
+
+The manual Windows acceptance passed for 1920 x 1080 at 100%, 1920 x 1080 at 125%,
+and 1366 x 768 at 125%. In all three environments the three priority dialogs remained
+inside the usable work area, long content scrolled locally, action bars stayed
+reachable, keyboard focus/Tab/Escape and resize retention behaved correctly, and
+closing left no visible residual state. The additional adapted dialogs each opened
+and closed normally. No destructive backup, restore or maintenance action was run.
+
+The reduced lifecycle probe opened and closed the Database/Backup dialog ten times.
+Root widget count remained 1/1, Toplevel count 0/0, no active grab remained and GUI
+callbacks changed from 2 to 1 rather than accumulating. The compact Preparation
+visual recheck also exposed a stale delayed LIVE-layout callback; its presentation-only
+reassertion now reads the current workspace and no longer leaves LIVE/Queue/Mixer
+content over Compact Preparation. The targeted combined dialog, geometry and layout
+run passed 91 tests. The complete project suite was intentionally not run under the
+commissioned risk-based verification strategy.
+
+Ursache war, dass ein verzögerter LIVE-Layout-Callback nach einem Wechsel zu
+VORBEREITUNG noch ausgeführt werden konnte. Dadurch konnten Deck-, Queue- oder
+Mixerbereiche die kompakte Vorbereitung überlagern. Die Korrektur verhindert, dass
+veraltete oder nicht mehr zum aktuellen Präsentationszustand passende
+Layoutanwendungen wirksam werden. Player-, Queue-, Automatik-, Audio- und
+Datenbanklogik wurden nicht verändert.
+
+Die vollständige Projektsuite wurde entsprechend der beauftragten risikobasierten
+Prüfstrategie bewusst nicht ausgeführt.
+
 ## Phase 2C compact Preparation implementation
 
 Phase 2C replaces the compact Preparation placeholder with a production catalog and

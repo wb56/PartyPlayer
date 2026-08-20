@@ -9,6 +9,7 @@ from party_player.window_geometry import (
     StoredWindowGeometry,
     WindowInsets,
     parse_stored_geometry,
+    resolve_child_window_geometry,
     resolve_window_geometry,
 )
 
@@ -122,3 +123,27 @@ def test_dpi_converts_physical_work_area_to_logical_window_size_once() -> None:
 def test_empty_monitor_list_is_rejected() -> None:
     with pytest.raises(ValueError, match="Arbeitsfläche"):
         resolve_window_geometry(None, DisplaySnapshot(()))
+
+
+def test_child_dialog_uses_parent_monitor_and_is_clamped_to_its_work_area() -> None:
+    displays = DisplaySnapshot(
+        (
+            MonitorGeometry(Rect(0, 0, 1920, 1080), Rect(0, 0, 1920, 1040), 1.0, True),
+            MonitorGeometry(Rect(1920, 0, 3286, 768), Rect(1920, 0, 3286, 728), 1.25),
+        ),
+        WindowInsets(8, 31, 8, 8),
+    )
+    parent = StoredWindowGeometry(900, 600, 2050, 40, 1.25)
+
+    result = resolve_child_window_geometry(
+        parent,
+        displays,
+        preferred_size=(820, 900),
+        standard_minimum=(600, 420),
+    )
+
+    assert result.monitor_index == 1
+    assert result.dpi_scale == 1.25
+    assert result.height == 551
+    assert 1920 <= result.x < 3286
+    assert result.y == 0
