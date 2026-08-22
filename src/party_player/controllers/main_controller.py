@@ -92,6 +92,8 @@ from party_player.queue_view_events import (
 )
 from party_player.queue_origin import derive_queue_origin
 from party_player.services.library_service import LibraryService
+from party_player.metadata_editor import MetadataEditorService
+from party_player.catalog_maintenance import CatalogMaintenanceService
 from party_player.saved_queue_service import SavedQueueService
 from party_player.settings_service import SettingsService
 from party_player.transition_controller import TransitionController, TransitionState
@@ -188,6 +190,8 @@ class MainView(Protocol):
 
     def show_catalog(self, tracks: list[Track], summary: str) -> None: ...
     def show_track_cues_changed(self, track_id: int, has_manual_cues: bool) -> None: ...
+
+    def show_track_metadata_changed(self, track: Track) -> None: ...
     def show_catalog_paging(self, page: int, page_count: int) -> None: ...
     def show_session(self, session: PartySession) -> None: ...
     def show_start_settings(self, restore_session: bool, fullscreen: bool) -> None: ...
@@ -319,6 +323,8 @@ class MainController:
     ) -> None:
         self._view = view
         self._library_service = library_service
+        self._metadata_editor = MetadataEditorService(library_service.database)
+        self._catalog_maintenance = CatalogMaintenanceService(library_service.database)
         self._queue_service = queue_service
         self._queue = QueueController(queue_service)
         self.deck_a = deck_a
@@ -1841,6 +1847,33 @@ class MainController:
         """Refresh only catalog/queue rows whose cue presentation changed."""
         self._view.show_track_cues_changed(track_id, has_manual_cues)
 
+    @property
+    def metadata_editor_service(self) -> MetadataEditorService:
+        return self._metadata_editor
+
+    @property
+    def catalog_maintenance_service(self) -> CatalogMaintenanceService:
+        return self._catalog_maintenance
+
+    def library_track(self, track_id: int) -> Track | None:
+        """Load one catalog track for an existing worker-backed UI request."""
+        return self._library_service.get_track(track_id)
+
+    def track_metadata_changed(self, track_id: int) -> None:
+        """Refresh only visible catalog and queue rows for one changed track."""
+
+        def publish(track: Track | None) -> None:
+            if track is not None:
+                self._view.show_track_metadata_changed(track)
+
+        self.load_track_editor_view_model(
+            lambda: self._library_service.get_track(track_id),
+            publish,
+            lambda error: self._logger.warning(
+                "Titelzeile nach Metadatenänderung nicht aktualisiert: %s", error
+            ),
+        )
+
     def track_editor_equalizer_state(
         self,
         track: Track,
@@ -3060,6 +3093,20 @@ class MainController:
 
     def is_audio_active(self) -> bool:
         return self.deck_a.backend.is_playing() or self.deck_b.backend.is_playing()
+
+    def metadata_analysis_audio_recovery_active(self) -> bool:
+        emergency_recovery_active = (
+            self._emergency is not None and self._emergency.recovery_active()
+        )
+        return bool(
+            self._global_audio_recovery_requested
+            or emergency_recovery_active
+            or self._deck_recovery_action_active
+            or self._emergency_action_active
+        )
+
+    def metadata_analysis_automation_active(self) -> bool:
+        return self._automatic_run_active
 
     def restore_safety_snapshot(
         self, *, cue_analysis_active: bool, loudness_analysis_active: bool

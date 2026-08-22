@@ -2,6 +2,7 @@
 
 import ctypes
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import sys
@@ -37,6 +38,7 @@ def _run_internal_vlc_probe(directory: Path, output_path: Path) -> None:
 
 def main() -> None:
     """Start the DeckRelay desktop application."""
+    multiprocessing.freeze_support()
     if len(sys.argv) == 4 and sys.argv[1] == "--internal-vlc-probe":
         _run_internal_vlc_probe(Path(sys.argv[2]), Path(sys.argv[3]))
         return
