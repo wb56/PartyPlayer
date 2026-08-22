@@ -119,6 +119,10 @@ from party_player.ui.dialogs import (
     QueueCueDialog,
     show_silent_message,
 )
+from party_player.ui.catalog_maintenance_dialog import (
+    CatalogAnalysisActions,
+    CatalogMaintenanceDialog,
+)
 
 
 def _time_text(seconds: float) -> str:
@@ -1537,7 +1541,6 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             fg_color="transparent",
             border_width=1,
         )
-        self._catalog_analysis_button.grid(row=0, column=8, padx=(4, 0))
         self._catalog_analysis_cancel_button = ctk.CTkButton(
             search_frame,
             text="Analyse abbrechen",
@@ -1546,14 +1549,12 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             command=self._cancel_catalog_analysis,
             state="disabled",
         )
-        self._catalog_analysis_cancel_button.grid(row=0, column=7, padx=(4, 0))
         self._outdated_analysis_button = ctk.CTkButton(
             search_frame,
             text="Neue/veraltete Cues",
             width=150,
             command=self._analyze_outdated_catalog,
         )
-        self._outdated_analysis_button.grid(row=0, column=6, padx=(8, 0))
         self._catalog_analysis_was_cancelled = False
         self._loudness_analysis_button = ctk.CTkButton(
             search_frame,
@@ -1563,7 +1564,6 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             fg_color="transparent",
             border_width=1,
         )
-        self._loudness_analysis_button.grid(row=1, column=8, padx=(4, 0), pady=(4, 0))
         self._loudness_analysis_cancel_button = ctk.CTkButton(
             search_frame,
             text="Lautheit abbrechen",
@@ -1572,14 +1572,12 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             command=self._cancel_loudness_analysis,
             state="disabled",
         )
-        self._loudness_analysis_cancel_button.grid(row=1, column=7, padx=(4, 0), pady=(4, 0))
         self._outdated_loudness_button = ctk.CTkButton(
             search_frame,
             text="Neue/veraltete Lautheit",
             width=150,
             command=lambda: self._analyze_loudness_catalog(outdated_only=True),
         )
-        self._outdated_loudness_button.grid(row=1, column=6, padx=(8, 0), pady=(4, 0))
         self._loudness_analysis_was_cancelled = False
         catalog_imports = ctk.CTkFrame(search_frame, fg_color="transparent")
         self._catalog_imports = catalog_imports
@@ -1598,6 +1596,13 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             command=self._choose_catalog_directory,
         )
         catalog_directory_button.pack(side="left")
+        catalog_maintenance_button = ctk.CTkButton(
+            catalog_imports,
+            text="Katalogpflege …",
+            width=130,
+            command=self._open_catalog_maintenance,
+        )
+        catalog_maintenance_button.pack(side="left", padx=(4, 0))
         self._static_tooltips.extend(
             (
                 Tooltip(catalog_file_button, "Eine MP3-/FLAC-Datei nur in den Katalog aufnehmen"),
@@ -1621,11 +1626,11 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._compact_preparation_tools.grid_columnconfigure(2, weight=1)
         self._compact_analysis_toggle = ctk.CTkButton(
             self._compact_preparation_tools,
-            text="Analyse anzeigen ▾",
+            text="Audioanalyse …",
             width=142,
             height=30,
             fg_color=theme.SURFACE_RAISED,
-            command=self._toggle_compact_analysis,
+            command=self._open_catalog_maintenance,
         )
         self._compact_analysis_toggle.grid(row=0, column=0, padx=(0, 4))
         self._compact_playlist_toggle = ctk.CTkButton(
@@ -4726,48 +4731,10 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._catalog_page_label.grid(row=0, column=4)
         self._catalog_next_button.grid(row=0, column=5, padx=(3, 0))
         self._catalog_imports.grid(row=1, column=0, columnspan=6, sticky="w", pady=(4, 0))
-        if not compact or self._compact_analysis_expanded:
-            cue_row, loudness_row = (2, 3) if compact else (0, 1)
-            first_column = 0 if compact else 6
-            first_pad = (0, 4) if compact else (8, 0)
-            cue_pady = (4, 0) if compact else 0
-            self._outdated_analysis_button.grid(
-                row=cue_row, column=first_column, padx=first_pad, pady=cue_pady
-            )
-            self._catalog_analysis_cancel_button.grid(
-                row=cue_row, column=first_column + 1, padx=(4, 0), pady=cue_pady
-            )
-            self._catalog_analysis_button.grid(
-                row=cue_row, column=first_column + 2, padx=(4, 0), pady=cue_pady
-            )
-            self._outdated_loudness_button.grid(
-                row=loudness_row,
-                column=first_column,
-                padx=first_pad,
-                pady=(4, 0),
-            )
-            self._loudness_analysis_cancel_button.grid(
-                row=loudness_row,
-                column=first_column + 1,
-                padx=(4, 0),
-                pady=(4, 0),
-            )
-            self._loudness_analysis_button.grid(
-                row=loudness_row,
-                column=first_column + 2,
-                padx=(4, 0),
-                pady=(4, 0),
-            )
 
     def _toggle_compact_analysis(self) -> None:
-        self._compact_analysis_expanded = not self._compact_analysis_expanded
-        self._compact_analysis_toggle.configure(
-            text=(
-                "Analyse ausblenden ▴" if self._compact_analysis_expanded else "Analyse anzeigen ▾"
-            )
-        )
-        if self._compact_layout_active:
-            self._configure_catalog_search_layout(True)
+        """Retained callback compatibility: analysis controls now live in catalog maintenance."""
+        self._open_catalog_maintenance()
 
     def _toggle_compact_playlist(self) -> None:
         self._compact_playlist_expanded = not self._compact_playlist_expanded
@@ -5499,6 +5466,18 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         for entry in self._queue_entries:
             if entry.track_id == track_id:
                 self.show_queue_entry(entry, self._queue_tracks.get(track_id))
+
+    def show_track_metadata_changed(self, track: Track) -> None:
+        """Replace one track snapshot and dirty only matching visible rows."""
+        for index, current in enumerate(self._catalog_view_models):
+            if current.track.id == track.id:
+                self._catalog_view_models[index] = replace(current, track=track)
+                self._catalog_dirty_scheduler.mark([index])
+        if track.id in self._queue_tracks:
+            self._queue_tracks[track.id] = track
+        for entry in self._queue_entries:
+            if entry.track_id == track.id:
+                self.show_queue_entry(entry, track)
 
     def _grow_catalog_pool(self) -> None:
         """Create the next small row reserve only when the user scrolls."""
@@ -6450,16 +6429,60 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
             _track_details_text(track, loudness),
         )
 
+    def _open_catalog_maintenance(self) -> None:
+        if self._controller is None:
+            return
+        controller = self._controller
+
+        def submit(
+            task: Callable[[], object],
+            completed: Callable[[object], None],
+            failed: Callable[[Exception], None],
+        ) -> bool:
+            return controller.load_track_editor_view_model(task, completed, failed)
+
+        def open_track(track_id: int) -> None:
+            controller.load_track_editor_view_model(
+                lambda: controller.library_track(track_id),
+                lambda track: self._edit_cue_points(track) if track is not None else None,
+                lambda error: self.show_error("Titel konnte nicht geöffnet werden", str(error)),
+            )
+
+        CatalogMaintenanceDialog(
+            self,
+            controller.catalog_maintenance_service,
+            submit,
+            open_track,
+            CatalogAnalysisActions(
+                self._analyze_outdated_catalog,
+                self._analyze_catalog,
+                self._cancel_catalog_analysis,
+                lambda: self._analyze_loudness_catalog(outdated_only=True),
+                self._analyze_loudness_catalog,
+                self._cancel_loudness_analysis,
+            ),
+        )
+
     def _edit_cue_points(self, track: Track) -> None:
         if self._cue_controller is None or self._controller is None:
             return
         cue_controller = self._cue_controller
         main_controller = self._controller
+
+        def submit_editor_task(
+            task: Callable[[], object],
+            completed: Callable[[object], None],
+            failed: Callable[[Exception], None],
+        ) -> bool:
+            return main_controller.load_track_editor_view_model(task, completed, failed)
+
         editor_controller = TrackEditorController(
             cue_controller,
             self._loudness_controller,
             main_controller.track_editor_equalizer_state,
             self._performance,
+            main_controller.metadata_editor_service,
+            submit_editor_task,
         )
 
         def refresh_changed_track(view_model: TrackEditorViewModel) -> None:
@@ -6473,6 +6496,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
                 )
             )
             main_controller.track_cues_changed(track.id, has_manual_cues)
+            main_controller.track_metadata_changed(track.id)
 
         def open_dialog(view_model: TrackEditorViewModel) -> None:
             if not self._window_is_alive():
@@ -7051,18 +7075,7 @@ class MainWindow(ctk.CTk):  # type: ignore[misc]
         self._hide_compact_active_analysis_if_complete()
 
     def _expand_compact_analysis_for_active_job(self) -> None:
-        """Keep active progress and cancellation reachable without starting work."""
-        if self._compact_analysis_expanded:
-            return
-        self._compact_analysis_expanded = True
-        self._compact_analysis_toggle.configure(text="Analyse ausblenden ▴")
-        coordinator = self._presentation_coordinator
-        if (
-            self._compact_layout_active
-            and coordinator is not None
-            and coordinator.state.workspace is Workspace.PREPARATION
-        ):
-            self._configure_catalog_search_layout(True)
+        """Active progress is already shown in the dedicated compact status row."""
 
     def _refresh_compact_analysis_toggle_state(self) -> None:
         self._compact_analysis_toggle.configure(state="normal")

@@ -23,6 +23,17 @@ from party_player.controllers.track_editor_controller import (
     TrackEditorViewModel,
 )
 from party_player.models import Track
+from party_player.metadata_editor import (
+    FIELD_LABELS,
+    MetadataSaveResult,
+    StagedSuggestionAction,
+    SuggestionEditorAction,
+    TrackMetadataChanges,
+    TrackMetadataEditorViewModel,
+    ValueRemovalMode,
+)
+from party_player.metadata_persistence import MetadataRevisionConflict
+from party_player.metadata_rules import MetadataFieldKey, RecordingClassification, RecordingKind
 from party_player.ui.tooltip import Tooltip
 
 
@@ -331,6 +342,14 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
         self._path_tooltip: Tooltip | None = None
         self._build_after_id: str | None = None
         self._lazy_tabs_built: set[str] = {"Cue"}
+        self._metadata_loading = False
+        self._metadata_entries: dict[MetadataFieldKey, Any] = {}
+        self._metadata_status_labels: dict[MetadataFieldKey, Any] = {}
+        self._metadata_confirmations: set[MetadataFieldKey] = set()
+        self._metadata_removals: dict[MetadataFieldKey, ValueRemovalMode] = {}
+        self._metadata_suggestion_actions: dict[int, StagedSuggestionAction] = {}
+        self._pending_metadata_changes: TrackMetadataChanges | None = None
+        self._metadata_tooltips: list[Tooltip] = []
         self.title("Titel bearbeiten")
         apply_responsive_dialog_geometry(
             self, parent, preferred_size=(780, 760), minimum_size=(620, 460)
@@ -339,7 +358,11 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
         self.protocol("WM_DELETE_WINDOW", self._cancel)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
-        self._editor_content = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self._editor_content = ctk.CTkScrollableFrame(
+            self,
+            fg_color="transparent",
+            height=1,
+        )
         self._editor_content.grid(row=1, column=0, sticky="nsew")
         self._editor_content.grid_columnconfigure(0, weight=1)
         self.grab_set()
@@ -543,11 +566,14 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
         name = self._tabs.get()
         if name in self._lazy_tabs_built or name == "Cue":
             return
+        if name == "Metadaten":
+            self._lazy_tabs_built.add(name)
+            self._build_metadata_tab()
+            return
         descriptions = {
             "Lautheit": "Lautheitsanalyse folgt in Phase B.",
             "Equalizer": "Titelbezogene Presetzuweisung folgt in Phase B.",
             "Jingles": "Jingle-Zuweisungen folgen in Phase C.",
-            "Metadaten": "Metadatenbearbeitung folgt in Phase C.",
         }
         description = descriptions.get(name)
         if description is None:
@@ -559,6 +585,409 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
             font=("Segoe UI", 15, "bold"),
         ).pack(expand=True, padx=24, pady=40)
         self._lazy_tabs_built.add(name)
+
+    def _build_metadata_tab(self) -> None:
+        tab = self._tabs.tab("Metadaten")
+        tab.grid_columnconfigure(0, weight=1)
+        self._metadata_container = ctk.CTkScrollableFrame(tab, height=470)
+        self._metadata_container.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
+        self._metadata_container.grid_columnconfigure(0, weight=1)
+        self._metadata_loading_label = ctk.CTkLabel(
+            self._metadata_container,
+            text="Metadaten und Vorschläge werden geladen …",
+            text_color="#9aa4b2",
+        )
+        self._metadata_loading_label.grid(row=0, column=0, padx=20, pady=40)
+        self._metadata_loading = True
+        accepted = self._editor_controller.load_metadata_async(
+            self._track_id,
+            self._metadata_loaded,
+            self._metadata_load_failed,
+        )
+        if not accepted:
+            self._metadata_load_failed(
+                RuntimeError("Metadatenauftrag konnte nicht gestartet werden")
+            )
+
+    def _metadata_loaded(self, model: TrackMetadataEditorViewModel) -> None:
+        if not self._is_active():
+            return
+        self._metadata_loading = False
+        self._view_model = self._editor_controller.with_metadata(self._view_model, model)
+        self._clear_metadata_container()
+        self._render_metadata_fields(model)
+        self._render_metadata_suggestions(model)
+
+    def _metadata_load_failed(self, error: Exception) -> None:
+        if not self._is_active():
+            return
+        self._metadata_loading = False
+        if hasattr(self, "_metadata_loading_label"):
+            self._metadata_loading_label.configure(
+                text=f"Metadaten konnten nicht geladen werden: {error}",
+                text_color="#ff8585",
+            )
+
+    def _clear_metadata_container(self) -> None:
+        for tooltip in self._metadata_tooltips:
+            tooltip.close()
+        self._metadata_tooltips.clear()
+        for child in self._metadata_container.winfo_children():
+            child.destroy()
+        self._metadata_entries.clear()
+        self._metadata_status_labels.clear()
+
+    def _render_metadata_fields(self, model: TrackMetadataEditorViewModel) -> None:
+        groups: tuple[tuple[str, tuple[tuple[MetadataFieldKey, str, str], ...]], ...] = (
+            (
+                "Grunddaten",
+                (
+                    (MetadataFieldKey.TITLE, "Titel", "Katalogtitel der konkreten Aufnahme"),
+                    (MetadataFieldKey.ARTIST, "Interpret", "Hauptinterpret"),
+                    (MetadataFieldKey.ALBUM, "Album", "Album, CD oder Zusammenstellung"),
+                    (MetadataFieldKey.MAIN_GENRE, "Hauptgenre", "Primäre Genrezuordnung"),
+                    (MetadataFieldKey.YEAR, "Ausgabejahr", "Jahr der CD, Compilation oder Edition"),
+                    (
+                        MetadataFieldKey.ORIGINAL_RELEASE_YEAR,
+                        "Ursprüngliches Erscheinungsjahr",
+                        "Erste Veröffentlichung dieser konkreten Aufnahme",
+                    ),
+                ),
+            ),
+            (
+                "Aufnahme und Tempo",
+                (
+                    (MetadataFieldKey.BPM, "Wirksame BPM", "Fachlich wirksamer Tempowert"),
+                    (
+                        MetadataFieldKey.ALTERNATIVE_BPM,
+                        "Alternative BPM",
+                        "Optionaler alternativer Tempowert",
+                    ),
+                    (
+                        MetadataFieldKey.BPM_CONFIDENCE,
+                        "BPM-Konfidenz",
+                        "Technischer Analysewert von 0 bis 1; schreibgeschützt",
+                    ),
+                ),
+            ),
+            (
+                "Musikalische Einordnung",
+                (
+                    (MetadataFieldKey.ENERGY, "Energie", "Redaktioneller Wert von 0 bis 100"),
+                    (
+                        MetadataFieldKey.DANCEABILITY,
+                        "Tanzbarkeit",
+                        "Redaktioneller Wert von 0 bis 100",
+                    ),
+                    (MetadataFieldKey.LANGUAGE, "Sprache", "Sprache des Titels"),
+                    (MetadataFieldKey.RATING, "Bewertung", "Persönliche Bewertung von 1 bis 5"),
+                ),
+            ),
+        )
+        row = 0
+        for heading, fields in groups:
+            ctk.CTkLabel(
+                self._metadata_container,
+                text=heading,
+                font=("Segoe UI", 15, "bold"),
+            ).grid(row=row, column=0, padx=12, pady=(14, 4), sticky="w")
+            row += 1
+            for key, label, help_text in fields:
+                row = self._metadata_field_row(model, row, key, label, help_text)
+            if heading == "Grunddaten":
+                self._metadata_decade_label = ctk.CTkLabel(
+                    self._metadata_container,
+                    text=f"Erscheinungsjahrzehnt: {model.release_decade or '—'} (automatisch berechnet)",
+                    text_color="#9aa4b2",
+                )
+                self._metadata_decade_label.grid(row=row, column=0, padx=16, pady=4, sticky="w")
+                row += 1
+            if heading == "Aufnahme und Tempo":
+                row = self._metadata_recording_row(model, row)
+        row = self._metadata_multivalue_rows(model, row)
+        ctk.CTkLabel(
+            self._metadata_container, text="Redaktion", font=("Segoe UI", 15, "bold")
+        ).grid(row=row, column=0, padx=12, pady=(14, 4), sticky="w")
+        row += 1
+        row = self._metadata_field_row(
+            model,
+            row,
+            MetadataFieldKey.COMMENT,
+            "Kommentar",
+            "Redaktioneller Katalogtext; die Musikdatei wird nicht verändert",
+        )
+        self._metadata_suggestions_row = row
+
+    def _metadata_field_row(
+        self,
+        model: TrackMetadataEditorViewModel,
+        row: int,
+        key: MetadataFieldKey,
+        label: str,
+        help_text: str,
+    ) -> int:
+        field = model.field(key)
+        frame = ctk.CTkFrame(self._metadata_container)
+        frame.grid(row=row, column=0, padx=10, pady=3, sticky="ew")
+        frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(frame, text=label, width=190, anchor="w").grid(
+            row=0, column=0, padx=8, pady=(7, 2), sticky="w"
+        )
+        entry = (
+            ctk.CTkTextbox(frame, height=90)
+            if key is MetadataFieldKey.COMMENT
+            else ctk.CTkEntry(frame)
+        )
+        entry.grid(row=0, column=1, padx=6, pady=(7, 2), sticky="ew")
+        if field.value is not None:
+            entry.insert("1.0" if key is MetadataFieldKey.COMMENT else 0, str(field.value))
+        if key is MetadataFieldKey.BPM_CONFIDENCE:
+            entry.configure(state="disabled")
+        self._metadata_entries[key] = entry
+        status = ctk.CTkLabel(
+            frame,
+            text=self._metadata_status_text(
+                field.source_text, field.status_text, field.has_suggestion
+            ),
+            text_color="#9fb3c8",
+            anchor="w",
+            justify="left",
+            wraplength=360,
+        )
+        status.grid(row=1, column=1, padx=6, pady=(0, 6), sticky="ew")
+        self._metadata_status_labels[key] = status
+        buttons = ctk.CTkFrame(frame, fg_color="transparent")
+        buttons.grid(row=0, column=2, rowspan=2, padx=6, pady=4)
+        if key is not MetadataFieldKey.BPM_CONFIDENCE:
+            ctk.CTkButton(
+                buttons,
+                text="Bestätigen",
+                width=90,
+                command=lambda selected=key: self._confirm_metadata_value(selected),
+            ).pack(pady=2)
+            ctk.CTkButton(
+                buttons,
+                text="Ohne Wert",
+                width=90,
+                fg_color="#6b5b2a",
+                command=lambda selected=key: self._confirm_metadata_empty(selected),
+            ).pack(pady=2)
+        self._metadata_tooltips.append(Tooltip(entry, help_text))
+        return row + 1
+
+    def _metadata_recording_row(self, model: TrackMetadataEditorViewModel, row: int) -> int:
+        field = model.field(MetadataFieldKey.RECORDING_CLASSIFICATION)
+        value = field.value
+        recording = (
+            value
+            if isinstance(value, RecordingClassification)
+            else RecordingClassification(RecordingKind.UNKNOWN)
+        )
+        frame = ctk.CTkFrame(self._metadata_container)
+        frame.grid(row=row, column=0, padx=10, pady=3, sticky="ew")
+        frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(frame, text="Aufnahmeart", width=190, anchor="w").grid(
+            row=0, column=0, padx=8, pady=(7, 2), sticky="w"
+        )
+        labels = {
+            RecordingKind.ORIGINAL: "Original",
+            RecordingKind.RE_RECORDING: "Neuaufnahme",
+            RecordingKind.LIVE: "Liveaufnahme",
+            RecordingKind.REMIX: "Remix",
+            RecordingKind.RADIO_EDIT: "Radio Edit",
+            RecordingKind.UNKNOWN: "Unbekannt",
+        }
+        self._recording_labels = labels
+        controls = ctk.CTkFrame(frame, fg_color="transparent")
+        controls.grid(row=0, column=1, padx=6, pady=(7, 2), sticky="w")
+        self._recording_menu = ctk.CTkOptionMenu(controls, values=list(labels.values()))
+        self._recording_menu.set(labels[recording.kind])
+        self._recording_menu.pack(side="left")
+        self._remastered_switch = ctk.CTkSwitch(controls, text="Remastert")
+        self._remastered_switch.pack(side="left", padx=12)
+        if recording.traits:
+            self._remastered_switch.select()
+        status = ctk.CTkLabel(
+            frame,
+            text=self._metadata_status_text(
+                field.source_text, field.status_text, field.has_suggestion
+            ),
+            text_color="#9fb3c8",
+            anchor="w",
+            justify="left",
+            wraplength=520,
+        )
+        status.grid(row=1, column=1, padx=6, pady=(0, 7), sticky="ew")
+        self._metadata_status_labels[MetadataFieldKey.RECORDING_CLASSIFICATION] = status
+        return row + 1
+
+    def _metadata_multivalue_rows(self, model: TrackMetadataEditorViewModel, row: int) -> int:
+        ctk.CTkLabel(
+            self._metadata_container,
+            text="Mehrfachwerte",
+            font=("Segoe UI", 15, "bold"),
+        ).grid(row=row, column=0, padx=12, pady=(14, 4), sticky="w")
+        row += 1
+        definitions = (
+            (MetadataFieldKey.MUSICAL_DECADES, "Musikalische Dekaden", "z. B. 1970, 1980"),
+            (MetadataFieldKey.ADDITIONAL_GENRES, "Zusätzliche Genres/Stile", "Kontrollierte Stile"),
+            (MetadataFieldKey.MOODS, "Stimmungen", "Redaktionelle Stimmungen"),
+            (MetadataFieldKey.TAGS, "Freie Tags", "Freie Begriffe"),
+        )
+        for key, label, hint in definitions:
+            field = model.field(key)
+            frame = ctk.CTkFrame(self._metadata_container)
+            frame.grid(row=row, column=0, padx=10, pady=3, sticky="ew")
+            frame.grid_columnconfigure(0, weight=1)
+            ctk.CTkLabel(frame, text=label, anchor="w").grid(
+                row=0, column=0, columnspan=2, padx=8, pady=(7, 2), sticky="ew"
+            )
+            textbox = ctk.CTkTextbox(frame, height=54)
+            textbox.grid(row=1, column=0, padx=(8, 6), pady=4, sticky="ew")
+            values = field.value if isinstance(field.value, tuple) else ()
+            textbox.insert("1.0", "\n".join(str(item) for item in values))
+            self._metadata_entries[key] = textbox
+            ctk.CTkLabel(
+                frame,
+                text=f"{hint} · {field.source_text} · {field.status_text}",
+                text_color="#9fb3c8",
+                anchor="w",
+                justify="left",
+                wraplength=520,
+            ).grid(row=2, column=0, columnspan=2, padx=8, pady=(0, 7), sticky="ew")
+            actions = ctk.CTkFrame(frame, fg_color="transparent")
+            actions.grid(row=1, column=1, padx=(2, 8), pady=4, sticky="n")
+            if key is MetadataFieldKey.MUSICAL_DECADES:
+                decade_menu = ctk.CTkOptionMenu(
+                    actions,
+                    values=[str(year) for year in range(1940, 2030, 10)],
+                    width=90,
+                )
+                decade_menu.pack(pady=2)
+                ctk.CTkButton(
+                    actions,
+                    text="Hinzufügen",
+                    width=90,
+                    command=lambda menu=decade_menu, target=textbox: self._add_metadata_decade(
+                        menu, target
+                    ),
+                ).pack(pady=2)
+            ctk.CTkButton(
+                actions,
+                text="Bestätigen",
+                width=90,
+                command=lambda selected=key: self._confirm_metadata_value(selected),
+            ).pack(pady=2)
+            ctk.CTkButton(
+                actions,
+                text="Ohne Wert",
+                width=90,
+                fg_color="#6b5b2a",
+                command=lambda selected=key: self._confirm_metadata_empty(selected),
+            ).pack(pady=2)
+            row += 1
+        return row
+
+    @staticmethod
+    def _add_metadata_decade(menu: Any, textbox: Any) -> None:
+        existing = {
+            value.strip()
+            for value in str(textbox.get("1.0", "end")).replace(",", "\n").splitlines()
+            if value.strip()
+        }
+        existing.add(str(menu.get()))
+        textbox.delete("1.0", "end")
+        textbox.insert("1.0", "\n".join(sorted(existing)))
+
+    def _render_metadata_suggestions(self, model: TrackMetadataEditorViewModel) -> None:
+        row = self._metadata_suggestions_row
+        ctk.CTkLabel(
+            self._metadata_container,
+            text="Offene Vorschläge",
+            font=("Segoe UI", 15, "bold"),
+        ).grid(row=row, column=0, padx=12, pady=(16, 4), sticky="w")
+        row += 1
+        if not model.suggestions:
+            ctk.CTkLabel(
+                self._metadata_container,
+                text="Für diesen Titel liegen keine offenen Vorschläge vor.",
+                text_color="#9aa4b2",
+            ).grid(row=row, column=0, padx=16, pady=8, sticky="w")
+            return
+        for suggestion in model.suggestions:
+            frame = ctk.CTkFrame(self._metadata_container, border_width=1)
+            frame.grid(row=row, column=0, padx=10, pady=4, sticky="ew")
+            text = (
+                f"{FIELD_LABELS[suggestion.field_key]}: {suggestion.current_value or '—'} → "
+                f"{suggestion.suggested_value}\n{suggestion.source_text} · "
+                f"Konfidenz {suggestion.confidence:.0%} · {suggestion.source_detail or 'ohne Detail'} · "
+                f"{suggestion.created_at}"
+            )
+            if suggestion.protected_conflict:
+                text += " · Geschützter Wert – ausdrückliche Bestätigung erforderlich"
+            ctk.CTkLabel(frame, text=text, justify="left", wraplength=620).pack(
+                anchor="w", padx=8, pady=6
+            )
+            actions = ctk.CTkFrame(frame, fg_color="transparent")
+            actions.pack(anchor="w", padx=8, pady=(0, 6))
+            for label, action in (
+                ("Übernehmen", SuggestionEditorAction.ACCEPT),
+                ("Übernehmen und bestätigen", SuggestionEditorAction.ACCEPT_AND_CONFIRM),
+                ("Ablehnen", SuggestionEditorAction.REJECT),
+            ):
+                ctk.CTkButton(
+                    actions,
+                    text=label,
+                    command=lambda item=suggestion, selected=action: self._stage_suggestion(
+                        item.suggestion_id, selected, item.protected_conflict
+                    ),
+                ).pack(side="left", padx=3)
+            ctk.CTkButton(
+                actions, text="Später prüfen", fg_color="#555555", command=lambda: None
+            ).pack(side="left", padx=3)
+            row += 1
+
+    @staticmethod
+    def _metadata_status_text(source: str, status: str, suggestion: bool) -> str:
+        return f"{source} · {status}" + (" · Neuer Vorschlag vorhanden" if suggestion else "")
+
+    def _confirm_metadata_value(self, key: MetadataFieldKey) -> None:
+        self._metadata_confirmations.add(key)
+        self._metadata_removals.pop(key, None)
+        self._error.configure(text="Bestätigung lokal vorgemerkt; erst Speichern übernimmt sie.")
+
+    def _confirm_metadata_empty(self, key: MetadataFieldKey) -> None:
+        self._clear_metadata_widget(key)
+        self._metadata_confirmations.discard(key)
+        self._metadata_removals[key] = ValueRemovalMode.CONFIRMED_EMPTY
+        self._error.configure(text="Bewusster Leerwert lokal vorgemerkt.")
+
+    def _clear_metadata_widget(self, key: MetadataFieldKey) -> None:
+        widget = self._metadata_entries.get(key)
+        if widget is None:
+            return
+        if isinstance(widget, ctk.CTkTextbox):
+            widget.delete("1.0", "end")
+        else:
+            widget.delete(0, "end")
+
+    def _stage_suggestion(
+        self, suggestion_id: int, action: SuggestionEditorAction, protected: bool
+    ) -> None:
+        allow_override = False
+        if protected and action is not SuggestionEditorAction.REJECT:
+            answer = ask_silent_yes_no_cancel(
+                self,
+                "Geschützten Wert ersetzen?",
+                "Der aktuelle Wert ist manuell geschützt. Soll der Vorschlag bewusst übernommen werden?",
+            )
+            if answer is not True:
+                return
+            allow_override = True
+        self._metadata_suggestion_actions[suggestion_id] = StagedSuggestionAction(
+            suggestion_id, action, allow_override
+        )
+        self._error.configure(text="Vorschlagsentscheidung lokal vorgemerkt.")
 
     def _field(
         self, row: int, label: str, value: float | None, current_button: str | None
@@ -580,6 +1009,77 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
                 row=row, column=2, padx=20, pady=8, sticky="w"
             )
         return entry
+
+    def _collect_metadata_changes(self) -> TrackMetadataChanges | None:
+        model = self._view_model.metadata
+        if model is None:
+            if self._metadata_loading:
+                raise ValueError("Metadaten werden noch geladen. Bitte kurz warten.")
+            return None
+        scalar_keys = (
+            MetadataFieldKey.TITLE,
+            MetadataFieldKey.ARTIST,
+            MetadataFieldKey.ALBUM,
+            MetadataFieldKey.MAIN_GENRE,
+            MetadataFieldKey.YEAR,
+            MetadataFieldKey.ORIGINAL_RELEASE_YEAR,
+            MetadataFieldKey.BPM,
+            MetadataFieldKey.ALTERNATIVE_BPM,
+            MetadataFieldKey.ENERGY,
+            MetadataFieldKey.DANCEABILITY,
+            MetadataFieldKey.LANGUAGE,
+            MetadataFieldKey.RATING,
+            MetadataFieldKey.COMMENT,
+        )
+        multivalue_keys = (
+            MetadataFieldKey.MUSICAL_DECADES,
+            MetadataFieldKey.ADDITIONAL_GENRES,
+            MetadataFieldKey.MOODS,
+            MetadataFieldKey.TAGS,
+        )
+        scalar_inputs = {
+            key: str(
+                self._metadata_entries[key].get("1.0", "end")
+                if key is MetadataFieldKey.COMMENT
+                else self._metadata_entries[key].get()
+            )
+            for key in scalar_keys
+        }
+        multivalue_inputs = {
+            key: str(self._metadata_entries[key].get("1.0", "end")) for key in multivalue_keys
+        }
+        removals = dict(self._metadata_removals)
+        for key, raw in (*scalar_inputs.items(), *multivalue_inputs.items()):
+            original = model.field(key).value
+            if raw.strip() or original in (None, "", ()) or key in removals:
+                continue
+            answer = ask_silent_yes_no_cancel(
+                self,
+                "Metadatenwert entfernen",
+                (
+                    f"Der Wert für „{FIELD_LABELS[key]}“ wurde geleert.\n\n"
+                    "Ja: bewusst ohne Wert bestätigen\n"
+                    "Nein: als fehlend/ungeprüft speichern\n"
+                    "Abbrechen: nicht speichern"
+                ),
+            )
+            if answer is None:
+                raise ValueError("Speichern wurde abgebrochen.")
+            removals[key] = ValueRemovalMode.CONFIRMED_EMPTY if answer else ValueRemovalMode.MISSING
+        selected_recording = self._recording_menu.get()
+        recording_kind = next(
+            key for key, label in self._recording_labels.items() if label == selected_recording
+        )
+        return self._editor_controller.build_metadata_changes(
+            model,
+            scalar_inputs,
+            recording_kind,
+            bool(self._remastered_switch.get()),
+            multivalue_inputs,
+            frozenset(self._metadata_confirmations),
+            removals,
+            tuple(self._metadata_suggestion_actions.values()),
+        )
 
     def _set_current(self, entry: ctk.CTkEntry) -> None:
         try:
@@ -604,6 +1104,7 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
         if self._saving:
             return
         try:
+            metadata_changes = self._collect_metadata_changes()
             changes = TrackEditorChanges(
                 self._editor_controller.parse_optional_seconds(self._cue_in.get(), "Cue In"),
                 self._editor_controller.parse_optional_seconds(self._cue_out.get(), "Cue Out"),
@@ -613,6 +1114,7 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
             changed = self._editor_controller.has_cue_changes(self._view_model, changes)
             self._saving = True
             self._save_had_changes = changed
+            self._pending_metadata_changes = metadata_changes
             self._save_button.configure(state="disabled", text="Speichert …")
             self._editor_controller.save_async(
                 self._view_model,
@@ -631,6 +1133,28 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
             return
         self._view_model = view_model
         self._show_sources(view_model.cue)
+        metadata_changes = getattr(self, "_pending_metadata_changes", None)
+        if metadata_changes is not None and not metadata_changes.empty:
+            accepted = self._editor_controller.save_metadata_async(
+                self._track_id,
+                metadata_changes,
+                self._metadata_save_completed,
+                self._metadata_save_failed,
+            )
+            if accepted:
+                return
+        CuePointDialog._finish_successful_save(self)
+
+    def _metadata_save_completed(self, result: MetadataSaveResult) -> None:
+        if not self._is_active():
+            return
+        self._view_model = self._editor_controller.with_metadata(
+            self._view_model, result.view_model
+        )
+        self._save_had_changes = self._save_had_changes or result.revision_changed
+        CuePointDialog._finish_successful_save(self)
+
+    def _finish_successful_save(self) -> None:
         preview_was_active = self._controller.active_preview_count > 0
         self._controller.stop_preview()
         self._controller.cancel_analysis()
@@ -638,9 +1162,81 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
             self._editor_controller.record_event("track_editor.cue_preview_stop")
             self._editor_controller.record_event("track_editor_preview_stopped_total")
         if self._save_had_changes and self._on_saved is not None:
-            self._on_saved(view_model)
+            self._on_saved(self._view_model)
         self._editor_controller.record_event("track_editor_save_total")
         self._finish()
+
+    def _metadata_save_failed(self, error: Exception) -> None:
+        if not self._is_active():
+            return
+        if isinstance(error, MetadataRevisionConflict):
+            self._error.configure(
+                text=(
+                    "Die Metadaten wurden zwischenzeitlich geändert. Der aktuelle Stand "
+                    "wird neu geladen; lokale Eingaben wurden nicht gespeichert."
+                )
+            )
+            self._editor_controller.load_metadata_async(
+                self._track_id,
+                self._resolve_metadata_conflict,
+                self._save_failed,
+            )
+            return
+        self._save_failed(error)
+
+    def _resolve_metadata_conflict(self, model: TrackMetadataEditorViewModel) -> None:
+        if not self._is_active():
+            return
+        pending = self._pending_metadata_changes
+        opened = self._view_model.metadata
+        if opened is None:
+            self._save_failed(RuntimeError("Geöffneter Metadatenstand ist nicht verfügbar"))
+            return
+        affected = set(pending.scalar_values if pending is not None else ())
+        affected.update(pending.multivalue_values if pending is not None else ())
+        affected.update(pending.confirmations if pending is not None else ())
+        affected.update(pending.removals if pending is not None else ())
+        comparison = "\n".join(
+            f"• {FIELD_LABELS[key]}: geöffnet={opened.field(key).value!s}; "
+            f"aktuell={model.field(key).value!s}"
+            for key in sorted(affected, key=lambda item: item.value)
+        )
+        answer = ask_silent_yes_no_cancel(
+            self,
+            "Metadaten wurden geändert",
+            (
+                "Die folgenden Felder müssen erneut geprüft werden:\n"
+                f"{comparison or '• Vorschlagsstatus wurde zwischenzeitlich geändert'}\n\n"
+                "Ja: aktuellen Stand laden und lokale Eingaben verwerfen\n"
+                "Nein: lokale Eingaben behalten und gegen den aktuellen Stand erneut prüfen\n"
+                "Abbrechen: Dialog unverändert geöffnet lassen"
+            ),
+        )
+        if answer is None:
+            self._reenable_save_after_conflict()
+            return
+        self._view_model = self._editor_controller.with_metadata(self._view_model, model)
+        if answer is False:
+            self._reenable_save_after_conflict()
+            self._error.configure(
+                text="Lokale Eingaben beibehalten. Bitte Unterschiede prüfen und erneut speichern."
+            )
+            return
+        self._metadata_confirmations.clear()
+        self._metadata_removals.clear()
+        self._metadata_suggestion_actions.clear()
+        self._clear_metadata_container()
+        self._render_metadata_fields(model)
+        self._render_metadata_suggestions(model)
+        self._reenable_save_after_conflict()
+        self._error.configure(
+            text="Aktueller Metadatenstand geladen. Bitte Änderungen erneut prüfen."
+        )
+
+    def _reenable_save_after_conflict(self) -> None:
+        self._pending_metadata_changes = None
+        self._saving = False
+        self._save_button.configure(state="normal", text="Speichern")
 
     def _save_failed(self, error: Exception) -> None:
         if not self._is_active():
@@ -761,6 +1357,10 @@ class CuePointDialog(ctk.CTkToplevel):  # type: ignore[misc]
         if path_tooltip is not None:
             path_tooltip.close()
             self._path_tooltip = None
+        for tooltip in getattr(self, "_metadata_tooltips", ()):
+            tooltip.close()
+        if hasattr(self, "_metadata_tooltips"):
+            self._metadata_tooltips.clear()
         self._editor_controller.record_event("track_editor.close")
         release_dialog(self)
         self.destroy()

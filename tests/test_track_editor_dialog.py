@@ -275,3 +275,37 @@ def test_placeholder_tab_is_built_lazily_and_only_once(monkeypatch: MonkeyPatch)
     assert packed[0][0] == "Lautheit"
     assert "schreibgeschützt" in packed[0][1]
     assert dialog._lazy_tabs_built == {"Cue", "Lautheit"}
+
+
+def test_metadata_tab_is_loaded_lazily_and_only_once() -> None:
+    class Tabs:
+        def get(self) -> str:
+            return "Metadaten"
+
+    class Dialog:
+        def __init__(self) -> None:
+            self._tabs = Tabs()
+            self._lazy_tabs_built = {"Cue"}
+            self.loads = 0
+
+        def _build_metadata_tab(self) -> None:
+            self.loads += 1
+
+    dialog = Dialog()
+
+    CuePointDialog._tab_changed(cast(Any, dialog))
+    CuePointDialog._tab_changed(cast(Any, dialog))
+
+    assert dialog.loads == 1
+    assert dialog._lazy_tabs_built == {"Cue", "Metadaten"}
+
+
+def test_late_metadata_result_is_ignored_after_dialog_close() -> None:
+    class Dialog:
+        def _is_active(self) -> bool:
+            return False
+
+        def _clear_metadata_container(self) -> None:
+            raise AssertionError("destroyed widgets must not be accessed")
+
+    CuePointDialog._metadata_loaded(cast(Any, Dialog()), cast(Any, object()))

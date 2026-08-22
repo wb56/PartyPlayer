@@ -10,6 +10,11 @@ class TrackRepository:
     def __init__(self, database: Database) -> None:
         self._database = database
 
+    @property
+    def database(self) -> Database:
+        """Expose the shared connection factory to transaction-level catalog services."""
+        return self._database
+
     def count(self) -> int:
         """Return the number of catalog tracks."""
         with self._database.connect() as connection:
@@ -90,11 +95,28 @@ class TrackRepository:
                    OR album LIKE ? COLLATE NOCASE
                    OR genre LIKE ? COLLATE NOCASE
                    OR CAST(year AS TEXT) LIKE ?
-                   OR CAST(original_release_year AS TEXT) LIKE ?)
+                   OR CAST(original_release_year AS TEXT) LIKE ?
+                   OR EXISTS (
+                       SELECT 1
+                       FROM track_metadata_terms AS assignment
+                       JOIN metadata_terms AS term ON term.id = assignment.term_id
+                       WHERE assignment.track_id = ranked.id
+                         AND term.display_name LIKE ? COLLATE NOCASE
+                   ))
                 ORDER BY artist COLLATE NOCASE, title COLLATE NOCASE, id
                 LIMIT ? OFFSET ?
                 """,
-                (pattern, pattern, pattern, pattern, pattern, pattern, limit, offset),
+                (
+                    pattern,
+                    pattern,
+                    pattern,
+                    pattern,
+                    pattern,
+                    pattern,
+                    pattern,
+                    limit,
+                    offset,
+                ),
             ).fetchall()
         return [Track(**dict(row)) for row in rows]
 
@@ -103,7 +125,7 @@ class TrackRepository:
         with self._database.connect() as connection:
             row = connection.execute(
                 """WITH ranked AS (
-                       SELECT title, artist, album, genre, year, original_release_year,
+                       SELECT id, title, artist, album, genre, year, original_release_year,
                               ROW_NUMBER() OVER (
                                   PARTITION BY lower(trim(title)), lower(trim(artist))
                                   ORDER BY id
@@ -117,8 +139,15 @@ class TrackRepository:
                       OR album LIKE ? COLLATE NOCASE
                       OR genre LIKE ? COLLATE NOCASE
                       OR CAST(year AS TEXT) LIKE ?
-                      OR CAST(original_release_year AS TEXT) LIKE ?)""",
-                (pattern, pattern, pattern, pattern, pattern, pattern),
+                      OR CAST(original_release_year AS TEXT) LIKE ?
+                      OR EXISTS (
+                          SELECT 1
+                          FROM track_metadata_terms AS assignment
+                          JOIN metadata_terms AS term ON term.id = assignment.term_id
+                          WHERE assignment.track_id = ranked.id
+                            AND term.display_name LIKE ? COLLATE NOCASE
+                      ))""",
+                (pattern, pattern, pattern, pattern, pattern, pattern, pattern),
             ).fetchone()
         return int(row["total"])
 

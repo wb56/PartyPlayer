@@ -117,6 +117,8 @@ from party_player.overlay_transfer import OverlayTransferService
 from party_player.backup_service import BackupService
 from party_player.application_restart import restart_current_application
 from party_player.database_maintenance import DatabaseMaintenanceService
+from party_player.metadata_analysis_coordinator import AnalysisOperatingState
+from party_player.metadata_analysis_service import MetadataAnalysisService
 
 
 class PartyPlayerApplication:
@@ -509,6 +511,7 @@ class PartyPlayerApplication:
             if (
                 cue_controller.active_analysis_job_count
                 or loudness_controller.active_analysis_job_count
+                or metadata_analysis.active_job_count
             ):
                 raise ValueError("FFmpeg kann während laufender Analysen nicht geändert werden")
             return diagnostic_service.check(
@@ -525,6 +528,7 @@ class PartyPlayerApplication:
             if (
                 cue_controller.active_analysis_job_count
                 or loudness_controller.active_analysis_job_count
+                or metadata_analysis.active_job_count
             ):
                 raise ValueError("FFmpeg kann während laufender Analysen nicht geändert werden")
             settings.reset_ffmpeg_bin_path()
@@ -542,6 +546,7 @@ class PartyPlayerApplication:
             lambda: not (
                 cue_controller.active_analysis_job_count
                 or loudness_controller.active_analysis_job_count
+                or metadata_analysis.active_job_count
             ),
             capability_snapshots,
         )
@@ -676,12 +681,42 @@ class PartyPlayerApplication:
         )
         window.bind_loudness_controller(loudness_controller)
 
+        def metadata_analysis_progress(event: str, job_id: str, detail: str) -> None:
+            gui_dispatcher.publish(
+                GuiEvent(
+                    GuiEventType.CALLBACK,
+                    "metadata_analysis_progress",
+                    lambda: logger.debug(
+                        "Metadatenanalyse: event=%s job=%s detail=%s",
+                        event,
+                        job_id,
+                        detail,
+                    ),
+                    coalesce_key="metadata_analysis_progress",
+                )
+            )
+
+        metadata_analysis = MetadataAnalysisService(
+            database,
+            tracks,
+            ffmpeg=(ffmpeg_executable if capabilities.metadata_analysis_available else None),
+            ffprobe=(ffprobe_executable if capabilities.metadata_analysis_available else None),
+            operating_state=lambda: AnalysisOperatingState(
+                production_mode=not settings.background_analysis_enabled(),
+                audio_recovery=controller.metadata_analysis_audio_recovery_active(),
+                automation_active=controller.metadata_analysis_automation_active(),
+            ),
+            publish_progress=metadata_analysis_progress,
+            worker_registry=worker_registry,
+        )
+
         required_restore_participants = [
             controller.restore_participant(),
             cue_controller.restore_participant(),
             emergency_persistence.restore_participant(),
             emergency_history.restore_participant(),
             replaygain_cache.restore_participant(),
+            metadata_analysis.restore_participant(),
         ]
         loudness_participant = loudness_controller.restore_participant()
         if loudness_participant is not None:
@@ -756,10 +791,18 @@ class PartyPlayerApplication:
                     daemon=True,
                 ).start()
 
+        def poll_metadata_analysis() -> None:
+            if not window.winfo_exists():
+                return
+            metadata_analysis.tick()
+            window.after(100, poll_metadata_analysis)
+
         window.after(150, initialize)
+        window.after(200, poll_metadata_analysis)
         try:
             window.mainloop()
         finally:
+            metadata_analysis.close()
             backup_restore_controller.close()
             overlay_controller.close()
             cue_controller.close()

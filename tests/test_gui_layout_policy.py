@@ -181,7 +181,7 @@ def test_compact_safety_stop_targets_only_explicitly_on_air_decks() -> None:
     assert commands == [("B", "stop")]
 
 
-def test_active_analysis_expands_compact_controls_without_starting_domain_work() -> None:
+def test_active_analysis_does_not_reopen_removed_catalog_controls() -> None:
     window = object.__new__(MainWindow)
     toggle = ConfigureDouble()
     window._compact_analysis_expanded = False
@@ -191,23 +191,22 @@ def test_active_analysis_expands_compact_controls_without_starting_domain_work()
 
     MainWindow._expand_compact_analysis_for_active_job(window)
 
-    assert window._compact_analysis_expanded is True
-    assert toggle.values["text"] == "Analyse ausblenden ▴"
+    assert window._compact_analysis_expanded is False
+    assert toggle.values == {}
 
 
-def test_active_analysis_disclosure_can_collapse_while_status_remains_separate() -> None:
+def test_legacy_compact_analysis_callback_opens_catalog_maintenance() -> None:
     window = object.__new__(MainWindow)
     toggle = ConfigureDouble()
     window._compact_analysis_expanded = True
-    window._catalog_analysis_active = True
-    window._loudness_analysis_active = False
     window._compact_analysis_toggle = toggle
     window._compact_layout_active = False
+    opened: list[bool] = []
+    window._open_catalog_maintenance = lambda: opened.append(True)
 
     MainWindow._toggle_compact_analysis(window)
 
-    assert window._compact_analysis_expanded is False
-    assert toggle.values["text"] == "Analyse anzeigen ▾"
+    assert opened == [True]
 
 
 def test_selected_playlist_does_not_replace_explicit_active_source() -> None:
